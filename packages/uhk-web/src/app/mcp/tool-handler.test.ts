@@ -10,7 +10,8 @@ const keyLabel = (moduleId: number, keyId: number) => getDefaultQwertyKeyLabel({
     defaultUserConfiguration, moduleId, keyId,
     mapper: { scanCodeToText: code => US_BASIC_SCANCODE_TEXTS[code] || [String(code)] },
 });
-const emptyState = { config: new UserConfiguration(), keyLabel };
+const baseState = { keyLabel, statusText: '' };
+const emptyState = { ...baseState, config: new UserConfiguration() };
 const call = { name: 'get_device_info' };
 
 test('get_device_info serializes the current device info', () => {
@@ -37,10 +38,44 @@ test('unknown tools return a clear error', () => {
     assert.match(reply.content[0].text, /Unknown tool/);
 });
 
+test('get_macro_errors returns firmware diagnostics and the exact cached status text', () => {
+    const statusText = [
+        'before: 12',
+        'Error at Test macro 2/17/9: Unrecognized argument: 1/2/3:',
+        '> 17 | tapKey 1/2/3:',
+        '>    |         ^',
+        'after:  34',
+        'Warning at Old name 1/5/2: Deprecated & still supported',
+        '> Position not available here.',
+        'Error at Truncated report 1/2/3:',
+        '',
+    ].join('\n');
+    const state = { ...emptyState, statusText };
+    const reply = handleMcpTool(state, { name: 'get_macro_errors' });
+    assert.equal(reply.isError, false);
+    assert.deepEqual(JSON.parse(reply.content[0].text), { statusText, errors: [
+        { macro: 'Test macro', action: 2, line: 17, column: 9, message: 'Unrecognized argument: 1/2/3:' },
+        { macro: 'Old name', action: 1, line: 5, column: 2, message: 'Deprecated & still supported' },
+        { macro: 'Truncated report', action: 1, line: 2, column: 3, message: '' },
+    ] });
+});
+
+test('get_macro_errors tells the user to press the key when Agent has no cached errors', () => {
+    for (const statusText of ['', 'value: 42']) {
+        const reply = handleMcpTool({ ...emptyState, statusText }, { name: 'get_macro_errors' });
+        assert.equal(reply.isError, false);
+        const result = JSON.parse(reply.content[0].text) as { errors: unknown[]; statusText: string; summary: string };
+        assert.deepEqual(result.errors, []);
+        assert.equal(result.statusText, statusText);
+        assert.match(result.summary, /macro loaded/);
+        assert.match(result.summary, /press the assigned key to verify that it works/);
+    }
+});
+
 test('list_keymaps reads a renamed keymap and its layers from the current configuration', () => {
     const config = new UserConfiguration().fromJsonObject(structuredClone(UHK_80_USER_CONFIG));
     config.keymaps[0].name = 'Unsaved layout';
-    const reply = handleMcpTool({ config, keyLabel }, { name: 'list_keymaps' });
+    const reply = handleMcpTool({ ...baseState, config }, { name: 'list_keymaps' });
     const [first] = JSON.parse(reply.content[0].text);
     assert.equal(first.name, 'Unsaved layout');
     assert.ok(first.layers.includes('base'));
@@ -49,7 +84,7 @@ test('list_keymaps reads a renamed keymap and its layers from the current config
 test('get_layer returns physical labels and the serialized actions of the requested layer', () => {
     const config = new UserConfiguration().fromJsonObject(structuredClone(UHK_80_USER_CONFIG));
     const keymap = config.keymaps[0];
-    const reply = handleMcpTool({ config, keyLabel }, {
+    const reply = handleMcpTool({ ...baseState, config }, {
         name: 'get_layer', arguments: { keymap: keymap.name, layer: 'base' },
     });
     const keys: Array<{ moduleId: number; keyId: number; label: string; action: unknown }> = JSON.parse(reply.content[0].text).keys;
@@ -79,7 +114,7 @@ test('get_macro hides text by default, leaves commands readable and honors expli
     const { config, text, command } = macroFixture();
     const call = { name: 'get_macro', arguments: { name: 'Mixed' } };
     for (const revealTextMacros of [false, true, false]) {
-        const reply = handleMcpTool({ config, keyLabel }, call, revealTextMacros);
+        const reply = handleMcpTool({ ...baseState, config }, call, revealTextMacros);
         const actions = JSON.parse(reply.content[0].text).macroActions;
         assert.equal(actions[0].text === (revealTextMacros ? text : '[text macro, 4 characters, hidden]'), true);
         assert.equal(actions[1].command, command);
@@ -88,7 +123,7 @@ test('get_macro hides text by default, leaves commands readable and honors expli
 
 test('list_macros only lists names and action types even when reveal is enabled', () => {
     const { config } = macroFixture();
-    const reply = handleMcpTool({ config, keyLabel }, { name: 'list_macros' }, true);
+    const reply = handleMcpTool({ ...baseState, config }, { name: 'list_macros' }, true);
     assert.deepEqual(JSON.parse(reply.content[0].text), [{ name: 'Mixed', actionTypes: ['text', 'command'] }]);
 });
 
@@ -99,7 +134,7 @@ test('unknown names identify the failed lookup without echoing input', () => {
         [{ name: 'get_layer', arguments: { keymap: text, layer: 'base' } }, /Unknown keymap/],
         [{ name: 'get_layer', arguments: { keymap: config.keymaps[0].name, layer: text } }, /Unknown layer/],
     ] as const) {
-        const reply = handleMcpTool({ config, keyLabel }, call);
+        const reply = handleMcpTool({ ...baseState, config }, call);
         assert.equal(reply.isError, true);
         assert.match(reply.content[0].text, message);
         assert.equal(reply.content[0].text.includes(text), false);
@@ -112,9 +147,9 @@ test('no read tool discloses a hidden text action', () => {
     for (const call of [
         { name: 'get_device_info' }, { name: 'list_keymaps' }, { name: 'list_macros' },
         { name: 'get_layer', arguments: { keymap: config.keymaps[0].name, layer: 'base' } },
-        { name: 'get_macro', arguments: { name: 'Mixed' } },
+        { name: 'get_macro', arguments: { name: 'Mixed' } }, { name: 'get_macro_errors' },
     ]) {
-        const reply = handleMcpTool({ config, keyLabel, info }, call);
+        const reply = handleMcpTool({ ...baseState, config, info }, call);
         assert.ok(!reply.isError);
         assert.equal(JSON.stringify(reply).includes(text), false);
     }
@@ -125,7 +160,7 @@ test('get_layer resolves the listed abbreviation when keymap names coincide', ()
     const [first, second] = config.keymaps;
     second.name = first.name;
     first.layers = [];
-    const read = (keymap: string) => handleMcpTool({ config, keyLabel }, {
+    const read = (keymap: string) => handleMcpTool({ ...baseState, config }, {
         name: 'get_layer', arguments: { keymap, layer: 'base' },
     });
     assert.match(read(first.name).content[0].text, /ambiguous/i);
@@ -138,7 +173,7 @@ test('a one-character text action leaves names, labels and errors intact', () =>
     macro.name = 'Email';
     (macro.macroActions[0] as TextMacroAction).text = 'a';
     config.keymaps[0].name = 'Work layout';
-    const state = { config, keyLabel: () => 'Space' };
+    const state = { ...baseState, config, keyLabel: () => 'Space' };
 
     const macros = handleMcpTool(state, { name: 'list_macros' });
     const [listedMacro] = JSON.parse(macros.content[0].text);
@@ -162,7 +197,7 @@ test('a one-character text action leaves names, labels and errors intact', () =>
 test('unexpected serialization errors return a generic message', () => {
     const { config, text } = macroFixture();
     config.macros[0].toJsonObject = () => { throw new Error(text); };
-    const reply = handleMcpTool({ config, keyLabel }, { name: 'get_macro', arguments: { name: 'Mixed' } });
+    const reply = handleMcpTool({ ...baseState, config }, { name: 'get_macro', arguments: { name: 'Mixed' } });
     assert.equal(reply.isError, true);
     assert.equal(reply.content[0].text, 'Could not read the user configuration.');
 });
@@ -170,12 +205,12 @@ test('unexpected serialization errors return a generic message', () => {
 test('short text actions preserve serializer vocabulary and full smart commands', () => {
     const { config, command } = macroFixture();
     (config.macros[0].macroActions[0] as TextMacroAction).text = 'e';
-    const reply = handleMcpTool({ config, keyLabel }, { name: 'get_macro', arguments: { name: 'Mixed' } });
+    const reply = handleMcpTool({ ...baseState, config }, { name: 'get_macro', arguments: { name: 'Mixed' } });
     const [typed, smart] = JSON.parse(reply.content[0].text).macroActions;
     assert.equal(typed.macroActionType, 'text');
     assert.equal(typed.text, '[text macro, 1 characters, hidden]');
     assert.equal(smart.command, command);
-    const list = handleMcpTool({ config, keyLabel }, { name: 'list_macros' });
+    const list = handleMcpTool({ ...baseState, config }, { name: 'list_macros' });
     assert.deepEqual(JSON.parse(list.content[0].text)[0].actionTypes, ['text', 'command']);
 });
 
@@ -188,7 +223,7 @@ function unsavedFixture(edit: (json: any) => void = () => {}, setup: (json: any)
     edit(edited);
     const config = new UserConfiguration().fromJsonObject(edited);
     const read = (state: Partial<Parameters<typeof handleMcpTool>[0]> = {}, reveal = false) => {
-        const reply = handleMcpTool({ config, keyLabel, baseline, ...state }, { name: 'get_unsaved_changes' }, reveal);
+        const reply = handleMcpTool({ ...baseState, config, baseline, ...state }, { name: 'get_unsaved_changes' }, reveal);
         return { reply, body: reply.isError ? reply.content[0].text : JSON.parse(reply.content[0].text) };
     };
     return { baseline, config, read };

@@ -71,6 +71,7 @@ export class AgentMcpServer {
                 name: z.string(),
             });
             registerRead('get_unsaved_changes', 'List every difference between Agent and the keyboard, including the user\'s own edits: key actions, macros and other settings. Save to keyboard in Agent would send all of them. Key actions name the macro they play instead of its index. Text actions are hidden unless enabled in Agent.');
+            registerRead('get_macro_errors', 'Read cached firmware macro errors and the latest status text, including setStatus output, after saving and pressing the assigned key.');
             void (async () => {
                 try {
                     await mcp.connect(transport);

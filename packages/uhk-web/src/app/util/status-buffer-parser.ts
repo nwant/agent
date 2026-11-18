@@ -1,13 +1,53 @@
-import { Macro } from 'uhk-common';
-import { escapeHtml } from './escape-html';
+import type { Macro } from 'uhk-common';
+import { escapeHtml } from './escape-html.js';
 
-export function parseStatusBuffer(macros: Macro[], statusBuffer: string): string {
+interface MacroError {
+    macro: string;
+    action: number;
+    line: number;
+    column: number;
+    message: string;
+}
+
+interface StatusBlock {
+    lines: string[];
+    error: MacroError | null;
+}
+
+export function parseStatusBuffer(statusBuffer: string): StatusBlock[] {
     if (!statusBuffer) {
-        return '';
+        return [];
     }
 
-    return splitToErrorBlocks(statusBuffer)
-        .map(block => transformToErrorBlock(macros, block))
+    return splitToErrorBlocks(statusBuffer).map(block => {
+        const lines = block.split('\n');
+        return { lines, error: parseErrorHeader(lines[0]) };
+    });
+}
+
+const errorLocation = /^(?:Error at |Warning at )(.*) (\d+)\/(\d+)\/(\d+):/;
+const firmwareErrorLocation = new RegExp(errorLocation.source + ' ');
+
+function parseErrorHeader(header: string): MacroError | null {
+    // Firmware puts a space after the location. A token echoed in the message can end in a bare colon.
+    const match = firmwareErrorLocation.exec(header) || errorLocation.exec(header);
+    if (!match) {
+        return null;
+    }
+
+    const [location, macro, action, line, column] = match;
+    return {
+        macro,
+        action: Number(action),
+        line: Number(line),
+        column: Number(column),
+        message: header.slice(location.length).trimStart(),
+    };
+}
+
+export function renderStatusBuffer(macros: Macro[], statusBuffer: string): string {
+    return parseStatusBuffer(statusBuffer)
+        .map(block => renderStatusBlock(macros, block))
         .join('');
 }
 
@@ -34,39 +74,21 @@ function splitToErrorBlocks(text: string): string[] {
     return errorBlocks;
 }
 
-function transformToErrorBlock(macros: Macro[], block: string): string {
-    const lines = block.split('\n');
-    if (lines.length < 4) {
-        return escapeHtml(block);
+function renderStatusBlock(macros: Macro[], { lines, error }: StatusBlock): string {
+    if (!error || lines.length < 4) {
+        return escapeHtml(lines.join('\n'));
+    }
+    if (!error.macro) {
+        return '';
     }
 
-    const line0Result = /^(Error at |Warning at )(.*) (\d+)\/(\d+)\/(\d+):/.exec(lines[0]);
-    if (!line0Result) {
-        return escapeHtml(block);
-    }
-
-    const macroName = line0Result[2];
-
-    if (!macroName) {
-        return null;
-    }
-
-    const macro = macros.find(macro => macro.name === macroName);
-
-    if (!macro)
-        return escapeHtml(block);
-
-    const macroActionIndex = parseInt(line0Result[3], 10) - 1;
-    const lineNr = parseInt(line0Result[4], 10);
-    const columnNr = parseInt(line0Result[5], 10);
-
+    const macro = macros.find(macro => macro.name === error.macro);
     const line1Result = /^(> \d* \| )(.*)/.exec(lines[1]);
-
-    if (!line1Result || line1Result.length < 3) {
-        return escapeHtml(block);
+    if (!macro || !line1Result) {
+        return escapeHtml(lines.join('\n'));
     }
 
-    const url = `#/macro/${macro.id}?actionIndex=${macroActionIndex}&lineNr=${lineNr}&columnNr=${columnNr}&inlineEdit=true`;
+    const url = `#/macro/${macro.id}?actionIndex=${error.action - 1}&lineNr=${error.line}&columnNr=${error.column}&inlineEdit=true`;
     const newLine2 = `${escapeHtml(line1Result[1])}<a href="${url}">${escapeHtml(line1Result[2])}</a>`;
     // Keep binding-site lines and nested location-stack lines (firmware may emit more than 3).
     const extraLines = lines

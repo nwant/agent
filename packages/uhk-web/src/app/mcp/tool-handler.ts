@@ -1,6 +1,7 @@
 import { LayerName, macroActionType, type McpToolCall, type McpToolReply, type UserConfiguration } from 'uhk-common';
 
 import { diffUserConfiguration, type UserConfigurationJson } from './config-diff.js';
+import { parseStatusBuffer } from '../util/status-buffer-parser.js';
 
 export interface McpDeviceInfo {
     connected: boolean;
@@ -12,6 +13,7 @@ export interface McpDeviceInfo {
 interface ToolState {
     info?: McpDeviceInfo;
     config: UserConfiguration;
+    statusText: string;
     /** The serializer JSON of what the keyboard has, or undefined when Agent has not read it. */
     baseline?: UserConfigurationJson;
     keyLabel(moduleId: number, keyId: number): string;
@@ -67,6 +69,19 @@ function readTool(state: ToolState, call: McpToolCall): unknown {
                 throw new ToolError('Unknown macro. Use list_macros to see available names.');
             }
             return macro.toJsonObject();
+        }
+        case 'get_macro_errors': {
+            const { statusText } = state;
+            const errors = parseStatusBuffer(statusText).flatMap(({ error }) => error ? [error] : []);
+            if (errors.length) {
+                return { errors, statusText };
+            }
+
+            return {
+                errors,
+                statusText,
+                summary: 'Agent has no cached macro errors. An error-free save indicates that the macro loaded. Save to keyboard in Agent if needed, then press the assigned key to verify that it works.',
+            };
         }
         case 'get_unsaved_changes': {
             if (!state.baseline) {

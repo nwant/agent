@@ -62,7 +62,7 @@ import { SelectOptionData } from '../models/select-option-data';
 import { defaultUhkThemeColors } from '../util/default-uhk-theme-colors';
 import { escapeHtml } from '../util/escape-html';
 import { groupMacrosByName } from '../util/group-macros-by-name';
-import { parseStatusBuffer } from '../util/status-buffer-parser';
+import { renderStatusBuffer } from '../util/status-buffer-parser';
 import { addMissingModuleConfigs } from './reducers/add-missing-module-configs';
 
 import * as fromAdvancedSettings from './reducers/advanced-settings.reducer';
@@ -362,8 +362,9 @@ export const getSkipFirmwareUpgrade = createSelector(deviceState, fromDevice.get
 export const isKeyboardLayoutChanging = createSelector(deviceState, fromDevice.isKeyboardLayoutChanging);
 export const keyboardHalvesAlwaysJoined = createSelector(deviceState, fromDevice.keyboardHalvesAlwaysJoined);
 export const isStatusBufferErrorHidden = createSelector(deviceState, fromDevice.isStatusBufferErrorHidden);
-export const getStatusBuffer = createSelector(deviceState, fromDevice.getStatusBuffer);
-export const getParsedStatusBuffer = createSelector(getMacros, getStatusBuffer, parseStatusBuffer);
+export const getVisibleStatusBuffer = createSelector(deviceState, fromDevice.getVisibleStatusBuffer);
+export const getLatestStatusBuffer = createSelector(deviceState, fromDevice.getLatestStatusBuffer);
+export const getParsedStatusBuffer = createSelector(getMacros, getVisibleStatusBuffer, renderStatusBuffer);
 export const getUserConfigAsBuffer = createSelector(getUserConfiguration, userConfig => {
     const json = userConfig.toJsonObject();
     const config = new UserConfiguration().fromJsonObject(json);

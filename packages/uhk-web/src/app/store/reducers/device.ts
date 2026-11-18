@@ -480,7 +480,8 @@ export const getSkipFirmwareUpgrade = (state: State) => state.skipFirmwareUpgrad
 export const isKeyboardLayoutChanging = (state: State) => state.isKeyboardLayoutChanging;
 export const keyboardHalvesAlwaysJoined = (state: State) => state.keyboardHalvesAlwaysJoined;
 export const isStatusBufferErrorHidden = (state: State) => state.statusBuffer && state.hideStatusBufferError;
-export const getStatusBuffer = (state: State) => {
+export const getLatestStatusBuffer = (state: State) => state.statusBuffer;
+export const getVisibleStatusBuffer = (state: State) => {
     if (state.hideStatusBufferError) {
         return ''
     }
