@@ -1,6 +1,6 @@
-import { KeystrokeAction, LayerName, UserConfiguration } from 'uhk-common';
+import { KeystrokeAction, LayerName, MouseAction, MouseActionParam, SwitchLayerAction, UserConfiguration } from 'uhk-common';
 
-import { MapperService } from '../services/mapper.service';
+import type { MapperService } from '../services/mapper.service';
 
 export const DEFAULT_QWERTY_KEYMAP_ABBREVIATION = 'QWR';
 
@@ -8,7 +8,7 @@ export interface GetDefaultQwertyKeyLabelOptions {
     defaultUserConfiguration: UserConfiguration;
     moduleId: number;
     keyId: number;
-    mapper: MapperService;
+    mapper: Pick<MapperService, 'scanCodeToText'>;
 }
 
 export function getDefaultQwertyKeyLabel(options: GetDefaultQwertyKeyLabelOptions): string {
@@ -33,6 +33,13 @@ export function getDefaultQwertyKeyLabel(options: GetDefaultQwertyKeyLabelOption
 
     const keyAction = module.keyActions[options.keyId];
 
+    if (keyAction instanceof SwitchLayerAction) {
+        const layer = LayerName[keyAction.layer];
+        return layer.charAt(0).toUpperCase() + layer.slice(1);
+    }
+    if (keyAction instanceof MouseAction) {
+        return MouseActionParam[keyAction.mouseAction];
+    }
     if (!(keyAction instanceof KeystrokeAction)) {
         return fallbackKeyLabel(options.keyId);
     }
@@ -40,9 +47,9 @@ export function getDefaultQwertyKeyLabel(options: GetDefaultQwertyKeyLabelOption
     return formatKeystrokeLabel(keyAction, options.mapper);
 }
 
-function formatKeystrokeLabel(keystrokeAction: KeystrokeAction, mapper: MapperService): string {
+function formatKeystrokeLabel(keystrokeAction: KeystrokeAction, mapper: Pick<MapperService, 'scanCodeToText'>): string {
     if (!keystrokeAction.hasScancode()) {
-        return 'Key';
+        return keystrokeAction.getModifierList().join(' + ') || 'Key';
     }
 
     const labelParts = mapper.scanCodeToText(keystrokeAction.scancode, keystrokeAction.type);
