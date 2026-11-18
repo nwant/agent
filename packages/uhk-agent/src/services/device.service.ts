@@ -18,6 +18,7 @@ import {
     escapeZephyrControlChars,
     findUhkModuleById,
     FirmwareJson,
+    FirmwareRepoInfo,
     FIRMWARE_UPGRADE_METHODS,
     FirmwareUpgradeConnectPrompt,
     FirmwareUpgradeIpcResponse,
@@ -148,6 +149,7 @@ export class DeviceService {
     private isI2cDebuggingEnabled = false;
     private i2cWatchdogRecoveryCounter = -1;
     private savedState: DeviceConnectionState;
+    private polledFirmware: FirmwareRepoInfo = {};
 
     constructor(private logService: LogService,
                 private win: Electron.BrowserWindow,
@@ -572,6 +574,7 @@ export class DeviceService {
 
         try {
             await this.stopPollUhkDevice();
+            this.savedState = undefined;
             await this.dongleZephyrLogService.disable();
             await this.leftHalfZephyrLogService.disable();
 
@@ -910,6 +913,7 @@ export class DeviceService {
 
         try {
             await this.stopPollUhkDevice();
+            this.savedState = undefined;
             const arg = args[0];
             const userConfig: Object = arg.userConfig;
             const deviceId: UHK_DEVICE_IDS_TYPE = arg.deviceId;
@@ -969,6 +973,7 @@ export class DeviceService {
 
         try {
             await this.stopPollUhkDevice();
+            this.savedState = undefined;
 
             const firmwarePathData: TmpFirmware = getDefaultFirmwarePath(this.rootDir);
             const packageJson = await getFirmwarePackageJson(firmwarePathData);
@@ -1239,6 +1244,16 @@ export class DeviceService {
         }
     }
 
+    public get connectedFirmware(): FirmwareRepoInfo | undefined {
+        const state = this.savedState;
+        if (!state || !state.connectedDevice || !state.hasPermission || !state.communicationInterfaceAvailable
+            || state.bootloaderActive || state.leftHalfBootloaderActive || state.dongle.bootloaderActive) {
+            return undefined;
+        }
+
+        return this.polledFirmware;
+    }
+
     public startPollUhkDevice(): void {
         this.logService.misc('[DeviceService] start poll UHK Device');
         this._pollerAllowed = true;
@@ -1401,6 +1416,7 @@ export class DeviceService {
                         }
                         this.win.webContents.send(IpcEvents.device.deviceConnectionStateChanged, state);
 
+                        this.polledFirmware = state.hardwareModules.rightModuleInfo;
                         this.savedState = newState;
 
                         this.logService.misc('[DeviceService] Device connection state changed to:', JSON.stringify(state, null, 2));

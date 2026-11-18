@@ -27,6 +27,7 @@ function setup(saved?: unknown, beforeSave?: (settings: McpSettings) => Promise<
     logger.error = (...args: unknown[]) => { errors.push(args); };
     const service = new McpService(logger, win, {
         ipc,
+        readReferenceManual: async () => { throw new Error('Unexpected reference manual read'); },
         settings: {
             get: async () => structuredClone(stored),
             set: async (_key, value) => {

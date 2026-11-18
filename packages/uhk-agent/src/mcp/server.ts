@@ -5,11 +5,17 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import type { McpSettings, McpToolCall, McpToolReply } from 'uhk-common';
 import { checkMcpAccess } from './access-gate';
 
+const REFERENCE_MANUAL_URI = 'uhk://smart-macro/reference-manual';
+const REFERENCE_MANUAL_MIME_TYPE = 'text/markdown';
+
 export class AgentMcpServer {
     private server?: Server;
     private readonly active = new Set<McpServer>();
 
-    constructor(private readonly request: (call: McpToolCall) => Promise<McpToolReply>) {}
+    constructor(
+        private readonly request: (call: McpToolCall) => Promise<McpToolReply>,
+        private readonly readReferenceManual: () => Promise<string>,
+    ) {}
 
     async start(settings: Pick<McpSettings, 'enabled' | 'port' | 'token'>): Promise<void> {
         this.server = createServer((req, res) => {
@@ -45,6 +51,13 @@ export class AgentMcpServer {
                 this.active.delete(mcp);
                 void mcp.close();
             });
+            mcp.registerResource('smart-macro-reference-manual', REFERENCE_MANUAL_URI, {
+                title: 'Smart-macro reference manual',
+                description: 'Markdown reference manual for the firmware on the connected keyboard.',
+                mimeType: REFERENCE_MANUAL_MIME_TYPE,
+            }, async () => ({
+                contents: [{ uri: REFERENCE_MANUAL_URI, mimeType: REFERENCE_MANUAL_MIME_TYPE, text: await this.readReferenceManual() }],
+            }));
             const registerRead = (name: string, description: string, inputSchema: Record<string, z.ZodString> = {}) => {
                 mcp.registerTool(name, {
                     description,
@@ -67,7 +80,14 @@ export class AgentMcpServer {
                 keymap: z.string(), layer: z.string(),
             });
             registerRead('list_macros', 'List current macro names and their action types.');
-            registerRead('get_macro', 'Read a macro by name. Text actions are hidden unless enabled in Agent. Smart macro commands, including text typed by write, are visible.', {
+            registerRead('get_macro', [
+                'Read a macro by name. Text macro actions are hidden unless enabled in Agent.',
+                'Smart-macro commands, including text typed by `write`, are visible to the AI client.',
+                `Use ${REFERENCE_MANUAL_URI} for syntax on the connected firmware.`,
+                'Known pitfalls: The OLED shows about 24 characters with no scrolling.',
+                'Settings read back as raw values, for example `$battery.chargeLimit` reads as 1 or 0.',
+                '`notify` on an if/else line shows the wrong text on firmware before the fix in UltimateHackingKeyboard/firmware#1668.',
+            ].join(' '), {
                 name: z.string(),
             });
             registerRead('get_unsaved_changes', 'List every difference between Agent and the keyboard, including the user\'s own edits: key actions, macros and other settings. Save to keyboard in Agent would send all of them. Key actions name the macro they play instead of its index. Text actions are hidden unless enabled in Agent.');

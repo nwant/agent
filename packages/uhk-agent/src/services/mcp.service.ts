@@ -14,6 +14,7 @@ function generateMcpToken(): string {
 
 interface McpServiceOptions {
     ipc: Pick<IpcMain, 'handle'> & EventEmitter;
+    readReferenceManual: () => Promise<string>;
     settings: {
         get(key: string): Promise<unknown>;
         set(key: string, value: McpSettings): Promise<void>;
@@ -28,7 +29,7 @@ export class McpService extends MainServiceBase {
     constructor(logService: LogService, win: BrowserWindow, private readonly options: McpServiceOptions) {
         super(logService, win);
         const bridge = new McpRendererBridge({ getWindow: () => this.win, ipc: options.ipc });
-        this.server = new AgentMcpServer(call => bridge.request(call, this.status.revealTextMacros));
+        this.server = new AgentMcpServer(call => bridge.request(call, this.status.revealTextMacros), options.readReferenceManual);
         options.ipc.handle(IpcEvents.mcp.getSettings, event => {
             this.checkSender(event);
             return this.status;

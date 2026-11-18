@@ -7,7 +7,7 @@ import fastify, { FastifyInstance } from 'fastify';
 import { FirmwareRepoInfo, IpcEvents, LogService } from 'uhk-common';
 import { pathExists } from 'uhk-fs';
 import { getPackageJsonFromPathAsync } from 'uhk-usb';
-import { downloadSmartMacroDoc, downloadSmartMacroReferenceManual, REFERENCE_MANUAL_FILE_NAME } from 'uhk-smart-macro';
+import { downloadSmartMacroDoc, DownloadSmartMacroDocOptions, downloadSmartMacroReferenceManual, REFERENCE_MANUAL_FILE_NAME } from 'uhk-smart-macro';
 
 import {
     copySmartMacroDocToWebserver,
@@ -26,6 +26,7 @@ export class SmartMacroDocService {
     private queueManager = new QueueManager();
     private staticServer: FastifyInstance;
     private readonly rootPath: string;
+    private readonly pendingManuals = new Map<string, Promise<string>>();
 
     constructor(private logService: LogService,
                 private rootDir: string) {
@@ -99,21 +100,28 @@ export class SmartMacroDocService {
         this.logService.misc(serviceLogMessage('stopped.'));
     }
 
+    public async readConnectedReferenceManual(firmware: FirmwareRepoInfo | undefined): Promise<string> {
+        if (!firmware) {
+            throw new Error('Connect a keyboard in Agent to read its smart-macro reference manual.');
+        }
+
+        try {
+            return await this.readReferenceManual(this.documentationOptions(firmware));
+        } catch (error) {
+            this.logService.error(serviceLogMessage('Could not read the connected firmware reference manual'), error);
+            throw new Error('The smart-macro reference manual is unavailable for the connected firmware.');
+        }
+    }
+
     private async downloadDocumentation(event: Electron.IpcMainEvent, firmwareRepoInfo: FirmwareRepoInfo): Promise<void> {
         this.logService.misc(serviceLogMessage('start downloading firmware documentation'), firmwareRepoInfo);
-        const [owner, repo] = firmwareRepoInfo.firmwareGitRepo.split('/');
-        const downloadDirectory = join(this.rootPath, owner, repo, firmwareRepoInfo.firmwareGitTag);
-        const indexHtmlPath = join(downloadDirectory, 'index.html');
+        const options = this.documentationOptions(firmwareRepoInfo);
+        const indexHtmlPath = join(options.directory, 'index.html');
 
         if (!await pathExists(indexHtmlPath)) {
             this.logService.misc(serviceLogMessage('firmware documentation downloading'));
 
-            await downloadSmartMacroDoc({
-                owner,
-                repo,
-                ref: firmwareRepoInfo.firmwareGitTag,
-                directory: downloadDirectory
-            });
+            await downloadSmartMacroDoc(options);
 
             this.logService.misc(serviceLogMessage('firmware documentation downloaded'));
         }
@@ -123,26 +131,59 @@ export class SmartMacroDocService {
 
         event.sender.send(IpcEvents.smartMacroDoc.downloadDocumentationReply, firmwareRepoInfo);
 
-        const docDevDirectory = join(downloadDirectory, 'doc-dev');
-        if (!await pathExists(docDevDirectory)) {
-            this.logService.misc(serviceLogMessage('reference manual downloading'));
-
-            await downloadSmartMacroReferenceManual({
-                owner,
-                repo,
-                ref: firmwareRepoInfo.firmwareGitTag,
-                directory: docDevDirectory,
-            });
-
-            this.logService.misc(serviceLogMessage('reference manual downloaded'));
-        }
-        else {
-            this.logService.misc(serviceLogMessage('reference manual downloaded earlier'));
-        }
-
-        const referenceManualPath = join(docDevDirectory, REFERENCE_MANUAL_FILE_NAME);
-        const referenceManual = await fs.readFile(referenceManualPath, 'utf8');
+        const referenceManual = await this.readReferenceManual(options);
         event.sender.send(IpcEvents.smartMacroDoc.referenceManualReply, referenceManual);
+    }
+
+    private documentationOptions({ firmwareGitRepo = '', firmwareGitTag: ref = '' }: FirmwareRepoInfo): DownloadSmartMacroDocOptions {
+        const [owner, repo, ...rest] = firmwareGitRepo.split('/');
+        // Firmware supplies these identifiers. Keep each path under its own cache entry.
+        const isPathSegment = (value: string) => !!value && value !== '.' && value !== '..' && !/[\\%?#:]/.test(value);
+        if (rest.length || !isPathSegment(owner) || !isPathSegment(repo) || !ref.split('/').every(isPathSegment)) {
+            throw new Error('Missing or invalid firmware repository or tag.');
+        }
+        return { owner, repo, ref, directory: join(this.rootPath, owner, repo, ref) };
+    }
+
+    private readReferenceManual(options: DownloadSmartMacroDocOptions): Promise<string> {
+        const directory = join(options.directory, 'doc-dev');
+        let pending = this.pendingManuals.get(directory);
+        if (pending === undefined) {
+            pending = this.loadReferenceManual({ ...options, directory }).finally(() => this.pendingManuals.delete(directory));
+            this.pendingManuals.set(directory, pending);
+        }
+        return pending;
+    }
+
+    private async loadReferenceManual(options: DownloadSmartMacroDocOptions): Promise<string> {
+        const { directory } = options;
+        const path = join(directory, REFERENCE_MANUAL_FILE_NAME);
+        const cached = await fs.readFile(path, 'utf8').catch(error => {
+            if (error.code === 'ENOENT') {
+                return '';
+            }
+            throw error;
+        });
+        if (cached.trim()) {
+            return cached;
+        }
+
+        this.logService.misc(serviceLogMessage('reference manual downloading'));
+        await fs.mkdir(directory, { recursive: true });
+        const temporaryDirectory = await fs.mkdtemp(join(directory, '.download-'));
+        try {
+            await downloadSmartMacroReferenceManual({ ...options, directory: temporaryDirectory });
+            const downloadedPath = join(temporaryDirectory, REFERENCE_MANUAL_FILE_NAME);
+            const text = await fs.readFile(downloadedPath, 'utf8');
+            if (!text.trim()) {
+                throw new Error('Reference manual is empty.');
+            }
+            await fs.rename(downloadedPath, path);
+            this.logService.misc(serviceLogMessage('reference manual downloaded'));
+            return text;
+        } finally {
+            await fs.rm(temporaryDirectory, { recursive: true, force: true });
+        }
     }
 
     private async fallbackToBundledFirmware(event: Electron.IpcMainEvent): Promise<void> {

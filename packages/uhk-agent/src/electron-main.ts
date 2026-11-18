@@ -163,6 +163,7 @@ async function createWindow() {
     if (!mcpService) {
         mcpService = new McpService(logger, win, {
             ipc: ipcMain,
+            readReferenceManual: () => smartMacroDocService.readConnectedReferenceManual(deviceService.connectedFirmware),
             settings: {
                 get: key => settings.get(key),
                 set: (key, value) => settings.set(key, { ...value }),
