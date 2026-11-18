@@ -1,21 +1,17 @@
 import { Injectable, inject } from '@angular/core';
 import { Store } from '@ngrx/store';
 import { take } from 'rxjs/operators';
-import { ConfigureMcp, IpcEvents, McpStatus, McpToolRequest } from 'uhk-common';
+import { ConfigureMcp, IpcEvents, MCP_MAX_PORT, MCP_MIN_PORT, McpStatus, McpToolRequest } from 'uhk-common';
 import { McpRendererService } from '../../app/services/mcp-renderer.service';
 import { IpcCommonRenderer } from '../../app/services/ipc-common-renderer';
 import { AppState, getMcpDeviceInfo } from '../../app/store';
 import { handleMcpTool } from '../../app/mcp/tool-handler';
 
-interface McpIpc {
-    invoke(channel: string, ...args: unknown[]): Promise<McpStatus>;
-}
-
 @Injectable()
 export class ElectronMcpRendererService extends McpRendererService {
     private readonly store = inject<Store<AppState>>(Store);
     private readonly ipcRenderer = inject(IpcCommonRenderer);
-    private readonly ipc = (window as unknown as { electron: { ipcRenderer: McpIpc } }).electron.ipcRenderer;
+    private readonly loaded: Promise<void>;
 
     constructor() {
         super();
@@ -27,20 +23,26 @@ export class ElectronMcpRendererService extends McpRendererService {
                 });
             });
         });
-        void this.load();
+        this.loaded = this.load();
     }
 
-    override async configure(input: ConfigureMcp): Promise<void> {
+    override async configure(changes: Partial<ConfigureMcp>): Promise<void> {
+        await this.loaded;
+        const { enabled, port } = this.status.value;
+        const input: ConfigureMcp = { enabled, port, regenerateToken: false, ...changes };
         try {
-            this.status.next(await this.ipc.invoke(IpcEvents.mcp.configure, input));
+            this.status.next(await this.ipcRenderer.invoke<McpStatus>(IpcEvents.mcp.configure, input));
         } catch {
-            this.status.next({ ...this.status.value, error: 'Could not update AI access. Choose a port between 1024 and 65535, or restart Agent.' });
+            this.status.next({
+                ...this.status.value,
+                error: `Could not update AI access. Choose a port between ${MCP_MIN_PORT} and ${MCP_MAX_PORT}, or restart Agent.`,
+            });
         }
     }
 
     private async load(): Promise<void> {
         try {
-            this.status.next(await this.ipc.invoke(IpcEvents.mcp.getSettings));
+            this.status.next(await this.ipcRenderer.invoke<McpStatus>(IpcEvents.mcp.getSettings));
         } catch {
             this.status.next({ ...this.status.value, error: 'Could not load AI access settings. Restart Agent.' });
         }

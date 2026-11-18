@@ -7,27 +7,13 @@ export interface McpDeviceInfo {
     halves: { left: boolean; right: boolean; merged: boolean };
 }
 
-export interface McpDeviceInput extends McpDeviceInfo {
-    communicationAvailable: boolean;
-    hasPermission: boolean;
-    bootloaderActive: boolean;
-}
-
-export function handleMcpTool(device: McpDeviceInput, call: McpToolCall): McpToolReply {
+export function handleMcpTool(info: McpDeviceInfo | undefined, call: McpToolCall): McpToolReply {
     if (call.name !== 'get_device_info') {
         return { isError: true, content: [{ type: 'text', text: 'Unknown tool.' }] };
     }
+    if (!info) {
+        return { isError: true, content: [{ type: 'text', text: 'Agent is still loading keyboard information. Try again shortly.' }] };
+    }
 
-    const connected = device.connected && device.communicationAvailable && device.hasPermission && !device.bootloaderActive;
-    const info: McpDeviceInfo = {
-        connected,
-        model: connected ? device.model : null,
-        firmwareVersion: connected ? device.firmwareVersion : null,
-        halves: {
-            left: connected && device.halves.left,
-            right: connected && device.halves.right,
-            merged: connected && device.halves.merged,
-        },
-    };
     return { content: [{ type: 'text', text: JSON.stringify(info) }] };
 }

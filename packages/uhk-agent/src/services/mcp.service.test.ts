@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { createServer } from 'node:http';
 import { test } from 'node:test';
+import { setImmediate } from 'node:timers/promises';
 import type { BrowserWindow, IpcMain, IpcMainInvokeEvent } from 'electron';
-import { DEFAULT_MCP_SETTINGS, IpcEvents, McpSettings, McpStatus } from 'uhk-common';
+import { DEFAULT_MCP_SETTINGS, IpcEvents, LogService, McpSettings, McpStatus } from 'uhk-common';
 import { McpService } from './mcp.service';
 import { availablePort, httpRequest } from '../mcp/test-http';
 
@@ -14,24 +15,30 @@ class SettingsIpc extends EventEmitter {
     }
 }
 
-function setup(saved?: unknown) {
+function setup(saved?: unknown, beforeSave?: (settings: McpSettings) => Promise<void>) {
     const ipc = new SettingsIpc();
     const frame = {};
     const sender = { mainFrame: frame };
-    let win = { webContents: sender } as unknown as BrowserWindow;
+    let destroyed = false;
+    const win = { webContents: sender, isDestroyed: () => destroyed } as unknown as BrowserWindow;
     let stored = saved;
-    const service = new McpService({
-        getWindow: () => win,
+    const logger = new LogService();
+    const errors: unknown[][] = [];
+    logger.error = (...args: unknown[]) => { errors.push(args); };
+    const service = new McpService(logger, win, {
         ipc,
         settings: {
             get: async () => structuredClone(stored),
-            set: async (_key, value) => { stored = structuredClone(value); },
+            set: async (_key, value) => {
+                await beforeSave?.(value);
+                stored = structuredClone(value);
+            },
         },
     });
     const invoke = async (channel: string, input?: unknown, event: { sender: unknown; senderFrame: unknown } = { sender, senderFrame: frame }): Promise<McpStatus> => {
         return ipc.handlers.get(channel)(event as unknown as IpcMainInvokeEvent, input);
     };
-    return { service, invoke, sender, frame, noWindow: () => { win = undefined; }, stored: () => stored as McpSettings };
+    return { service, invoke, sender, frame, errors, destroyWindow: () => { destroyed = true; }, stored: () => stored as McpSettings };
 }
 
 const token = 'a'.repeat(64);
@@ -45,7 +52,6 @@ test('AI access starts disabled, generates a token and persists application sett
     assert.equal(status.port, DEFAULT_MCP_SETTINGS.port);
     assert.match(status.token, /^[a-f0-9]{64}$/);
     assert.deepEqual(fixture.stored(), { enabled: false, port: 53417, token: status.token });
-    await assert.rejects(httpRequest({ port: status.port, token: status.token }));
 });
 
 test('saved port and token are restored, with malformed saved values replaced', async context => {
@@ -79,7 +85,7 @@ test('configure rejects invalid input and callers outside the Agent main frame',
         await assert.rejects(fixture.invoke(IpcEvents.mcp.getSettings, undefined, event), /Unknown Agent window/);
         await assert.rejects(fixture.invoke(IpcEvents.mcp.configure, valid, event), /Unknown Agent window/);
     }
-    fixture.noWindow();
+    fixture.destroyWindow();
     await assert.rejects(fixture.invoke(IpcEvents.mcp.getSettings), /Unknown Agent window/);
     assert.deepEqual(fixture.stored(), { enabled: false, port: 53418, token });
 });
@@ -89,6 +95,7 @@ test('enable, regenerate, restart and disable control the listener and durable c
     const fixture = setup({ enabled: false, port, token });
     context.after(() => fixture.service.stop());
     await fixture.service.start();
+    await assert.rejects(httpRequest({ port, token }), { code: 'ECONNREFUSED' });
     await fixture.invoke(IpcEvents.mcp.configure, { enabled: true, port, regenerateToken: false });
     assert.equal((await httpRequest({ port, token, method: 'GET' })).status, 405);
     const rotated = await fixture.invoke(IpcEvents.mcp.configure, { enabled: true, port, regenerateToken: true });
@@ -115,5 +122,39 @@ test('a busy port disables AI access and returns an actionable error', async con
     const status = await fixture.invoke(IpcEvents.mcp.getSettings);
     assert.equal(status.enabled, false);
     assert.match(status.error, /Choose another port/);
+    assert.ok(fixture.errors.some(([message]) => message === `[McpService] Could not bind to 127.0.0.1:${port}`));
     assert.equal(fixture.stored().enabled, false);
+});
+
+test('quick configure requests apply in order even when the first write is pending', async context => {
+    const port = await availablePort();
+    const writing = Promise.withResolvers<void>();
+    const releaseWrite = Promise.withResolvers<void>();
+    const writes: boolean[] = [];
+    const fixture = setup({ enabled: false, port, token }, async settings => {
+        writes.push(settings.enabled);
+        if (settings.enabled) {
+            writing.resolve();
+            await releaseWrite.promise;
+        }
+    });
+    context.after(() => fixture.service.stop());
+    await fixture.service.start();
+
+    const enable = fixture.invoke(IpcEvents.mcp.configure, { enabled: true, port, regenerateToken: false });
+    const disable = fixture.invoke(IpcEvents.mcp.configure, { enabled: false, port, regenerateToken: false });
+    try {
+        await writing.promise;
+        await setImmediate();
+        assert.deepEqual(writes, [false, true]);
+    } finally {
+        releaseWrite.resolve();
+    }
+
+    const [enabled, disabled] = await Promise.all([enable, disable]);
+    assert.equal(enabled.enabled, true);
+    assert.equal(disabled.enabled, false);
+    assert.deepEqual(writes, [false, true, false]);
+    assert.equal(fixture.stored().enabled, false);
+    await assert.rejects(httpRequest({ port, token }), { code: 'ECONNREFUSED' });
 });

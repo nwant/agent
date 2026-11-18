@@ -4,6 +4,10 @@ export class IpcCommonRenderer {
 
     }
 
+    invoke<T>(_channel: string, ..._args: unknown[]): Promise<T> {
+        return Promise.reject(new Error('IPC is only available in Electron.'));
+    }
+
     on(channel: string, listener: Function): this {
         return this;
     }

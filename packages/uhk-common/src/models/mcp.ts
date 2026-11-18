@@ -4,6 +4,13 @@ export interface McpSettings {
     token: string;
 }
 
+export const MCP_MIN_PORT = 1024;
+export const MCP_MAX_PORT = 65535;
+
+export function isMcpPort(port: unknown): port is number {
+    return typeof port === 'number' && Number.isInteger(port) && port >= MCP_MIN_PORT && port <= MCP_MAX_PORT;
+}
+
 export const DEFAULT_MCP_SETTINGS: McpSettings = {
     enabled: false,
     port: 53417,
@@ -22,7 +29,6 @@ export interface McpStatus extends McpSettings {
 
 export interface McpToolCall {
     name: string;
-    arguments?: Record<string, unknown>;
 }
 
 export interface McpToolReply {

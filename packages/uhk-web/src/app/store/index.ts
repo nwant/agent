@@ -34,7 +34,6 @@ import {
     UserConfiguration,
     VERSIONS,
 } from 'uhk-common';
-import type { McpDeviceInput } from '../mcp/tool-handler';
 import { environment } from '../../environments/environment';
 import {
     AppUpdateNotificationViewModel,
@@ -955,20 +954,4 @@ export const getApplicationSettings = createSelector(
         };
     });
 
-export const getMcpDeviceInfo = createSelector(deviceState, (device): McpDeviceInput => {
-    const connected = device.deviceConnectionStateLoaded && !!device.connectedDevice;
-    const right = device.modules.rightModuleInfo;
-    return {
-        connected,
-        communicationAvailable: device.communicationInterfaceAvailable,
-        hasPermission: device.hasPermission,
-        bootloaderActive: device.bootloaderActive,
-        model: connected ? device.connectedDevice.name : null,
-        firmwareVersion: connected && right && right.firmwareVersion ? right.firmwareVersion : null,
-        halves: {
-            left: connected && device.halvesInfo.isLeftHalfConnected,
-            right: connected,
-            merged: connected && device.halvesInfo.areHalvesMerged,
-        },
-    };
-});
+export { getMcpDeviceInfo } from './mcp-device-info.selector';

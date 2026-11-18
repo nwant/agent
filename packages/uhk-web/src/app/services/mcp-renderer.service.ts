@@ -7,7 +7,7 @@ export class McpRendererService {
     protected readonly status = new BehaviorSubject<McpStatus>({ ...DEFAULT_MCP_SETTINGS, error: '' });
     readonly status$ = this.status.asObservable();
 
-    configure(_input: ConfigureMcp): Promise<void> {
+    configure(_changes: Partial<ConfigureMcp>): Promise<void> {
         return Promise.resolve();
     }
 }

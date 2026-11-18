@@ -5,7 +5,7 @@ import { Store } from '@ngrx/store';
 import { Observable, combineLatest } from 'rxjs';
 import { map, take } from 'rxjs/operators';
 
-import { AppTheme, KEY_LANGUAGE_OPTIONS, KeyLanguage, MacroGroupingSettings } from 'uhk-common';
+import { AppTheme, ConfigureMcp, KEY_LANGUAGE_OPTIONS, KeyLanguage, MacroGroupingSettings, MCP_MAX_PORT, MCP_MIN_PORT } from 'uhk-common';
 import {
     AppState,
     appUpdateSettingsState,
@@ -29,6 +29,7 @@ import {
     ToggleCheckForUpdateOnStartupAction
 } from '../../../store/actions/auto-update-settings';
 import {
+    ConfigureMcpAction,
     OpenConfigFolderAction,
     SetAppThemeAction,
     SetDetectSharedConfigurationChangesAction,
@@ -83,7 +84,9 @@ export class SettingsComponent {
         { id: AppTheme.Dark, text: 'Dark', icon: faMoon },
     ];
 
-    readonly mcp = inject(McpRendererService);
+    readonly mcpStatus$ = inject(McpRendererService).status$;
+    readonly mcpMinPort = MCP_MIN_PORT;
+    readonly mcpMaxPort = MCP_MAX_PORT;
     private readonly store = inject<Store<AppState>>(Store);
     private readonly fileDialogService = inject(FileDialogService);
 
@@ -144,6 +147,10 @@ export class SettingsComponent {
 
     toggleMinimizeToTray(enabled: boolean): void {
         this.store.dispatch(new ToggleMinimizeToTrayAction(enabled));
+    }
+
+    configureMcp(changes: Partial<ConfigureMcp>): void {
+        this.store.dispatch(new ConfigureMcpAction(changes));
     }
 
     toggleAlwaysEnableAdvancedMode(enabled: boolean): void {

@@ -1,6 +1,6 @@
 import { Action } from '@ngrx/store';
 
-import { ApplicationSettings, AppStartInfo, AppTheme, HardwareConfiguration, KeyLanguage, MacroGroupingSettings, Notification, SharedConfigApplyData } from 'uhk-common';
+import { ApplicationSettings, AppStartInfo, AppTheme, ConfigureMcp, HardwareConfiguration, KeyLanguage, MacroGroupingSettings, Notification, SharedConfigApplyData } from 'uhk-common';
 import { ElectronLogEntry } from '../../models/xterm-log';
 import { NavigationPayload } from '../../models';
 
@@ -31,6 +31,7 @@ export enum ActionTypes {
     ToggleKeyboardHalvesAlwaysJoined = '[app] Toggle keyboard halves always joined',
     SetMacroGroupingSettings = '[app] Set macro grouping settings',
     ToggleMinimizeToTray = '[app] Toggle minimize to tray',
+    ConfigureMcp = '[app] Configure AI access',
     SetAppTheme = '[app] Set application theme',
     SetKeyLanguage = '[app] Set key language',
     SetSharedConfigurationFilePath = '[app] Set shared configuration file path',
@@ -195,6 +196,13 @@ export class ToggleMinimizeToTrayAction implements Action {
     }
 }
 
+export class ConfigureMcpAction implements Action {
+    type = ActionTypes.ConfigureMcp;
+
+    constructor(public payload: Partial<ConfigureMcp>) {
+    }
+}
+
 export class SetAppThemeAction implements Action {
     type = ActionTypes.SetAppTheme;
 
@@ -295,6 +303,7 @@ export type Actions
     | ToggleKeyboardHalvesAlwaysJoinedAction
     | SetMacroGroupingSettingsAction
     | ToggleMinimizeToTrayAction
+    | ConfigureMcpAction
     | SetAppThemeAction
     | SetKeyLanguageAction
     | SetSharedConfigurationFilePathAction

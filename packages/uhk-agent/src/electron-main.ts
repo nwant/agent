@@ -161,8 +161,7 @@ async function createWindow() {
 
     // Backstop to Electron's window-all-closed exit: never register IPC handlers twice.
     if (!mcpService) {
-        mcpService = new McpService({
-            getWindow: () => win,
+        mcpService = new McpService(logger, win, {
             ipc: ipcMain,
             settings: {
                 get: key => settings.get(key),

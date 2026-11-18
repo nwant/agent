@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { Action, Store } from '@ngrx/store';
 import { Actions, createEffect, ofType } from '@ngrx/effects';
-import { map, mergeMap, startWith, switchMap, tap, withLatestFrom } from 'rxjs/operators';
+import { concatMap, map, mergeMap, startWith, switchMap, tap, withLatestFrom } from 'rxjs/operators';
 import { NotifierService } from 'gramli-angular-notifier';
 
 import {
@@ -18,6 +18,7 @@ import {
     ActionTypes,
     ApplyAppStartInfoAction,
     AppStartedAction,
+    ConfigureMcpAction,
     DismissUndoNotificationAction,
     LoadApplicationSettingsSuccessAction,
     NavigateTo,
@@ -38,6 +39,7 @@ import { ActionTypes as SmartMacroDocActionTypes } from '../actions/smart-macro-
 import { ActionTypes as UserConfigActionTypes } from '../actions/user-config';
 import { AppState, getApplicationSettings, runningInElectron } from '../index';
 import { DataStorageRepositoryService } from '../../services/datastorage-repository.service';
+import { McpRendererService } from '../../services/mcp-renderer.service';
 
 @Injectable()
 export class ApplicationEffects {
@@ -46,6 +48,7 @@ export class ApplicationEffects {
     private readonly appUpdateRendererService = inject(AppUpdateRendererService);
     private readonly dataStorageRepository = inject(DataStorageRepositoryService);
     private readonly logService = inject(LogService);
+    private readonly mcpRendererService = inject(McpRendererService);
     private readonly notifierService = inject(NotifierService);
     private readonly router = inject(Router);
     private readonly store = inject<Store<AppState>>(Store);
@@ -202,6 +205,11 @@ export class ApplicationEffects {
         ),
     { dispatch: false }
     );
+
+    configureMcp$ = createEffect(() => this.actions$.pipe(
+        ofType<ConfigureMcpAction>(ActionTypes.ConfigureMcp),
+        concatMap(action => this.mcpRendererService.configure(action.payload))
+    ), { dispatch: false });
 
     navigateTo$ = createEffect(() => this.actions$
         .pipe(

@@ -1,4 +1,4 @@
-import { ErrorHandler, NgModule, inject } from '@angular/core';
+import { ErrorHandler, NgModule } from '@angular/core';
 import { BrowserModule } from '@angular/platform-browser';
 import { LogService } from 'uhk-common';
 import { McpRendererService } from '../app/services/mcp-renderer.service';
@@ -49,5 +49,4 @@ import { CustomRouterStateSerializer } from '../app/store/router-util';
     bootstrap: [MainAppComponent]
 })
 export class UhkRendererModule {
-    private readonly mcpRenderer = inject(McpRendererService);
 }
