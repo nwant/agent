@@ -10,6 +10,7 @@ const detected = {
     communicationInterfaceAvailable: true,
     hasPermission: true,
     bootloaderActive: false,
+    leftHalfBootloaderActive: false,
     modules: { rightModuleInfo: { firmwareVersion: '18.0.5', modules: {} } },
     halvesInfo: { leftModuleSlot: LeftSlotModules.NoModule, rightModuleSlot: RightSlotModules.NoModule, isLeftHalfConnected: true, areHalvesMerged: true },
 };
@@ -22,7 +23,9 @@ for (const [reason, override] of [
     ['no keyboard detected', { connectedDevice: undefined }],
     ['no communication interface', { communicationInterfaceAvailable: false }],
     ['no device permission', { hasPermission: false }],
-    ['keyboard in bootloader mode', { bootloaderActive: true }],
+    ['right half in bootloader mode', { bootloaderActive: true }],
+    ['left half in bootloader mode', { leftHalfBootloaderActive: true }],
+    ['dongle in bootloader mode', { dongle: { bootloaderActive: true, multiDevice: false, serialNumber: 'test' } }],
 ] as const) {
     test(`device info suppresses hardware details with ${reason}`, () => {
         assert.deepEqual(getMcpDeviceInfo({ device: { ...detected, ...override } }), {

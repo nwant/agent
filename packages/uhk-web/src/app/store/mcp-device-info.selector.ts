@@ -4,7 +4,7 @@ import type { State as DeviceState } from './reducers/device';
 
 type McpDeviceState = Pick<DeviceState,
     'deviceConnectionStateLoaded' | 'connectedDevice' | 'hasPermission' | 'communicationInterfaceAvailable' |
-    'bootloaderActive' | 'modules' | 'halvesInfo'>;
+    'bootloaderActive' | 'leftHalfBootloaderActive' | 'dongle' | 'modules' | 'halvesInfo'>;
 
 export const getMcpDeviceInfo = createSelector(
     (state: { device: McpDeviceState }) => state.device,
@@ -13,7 +13,9 @@ export const getMcpDeviceInfo = createSelector(
             return undefined;
         }
 
-        if (!device.connectedDevice || !device.communicationInterfaceAvailable || !device.hasPermission || device.bootloaderActive) {
+        const inBootloader = device.bootloaderActive || device.leftHalfBootloaderActive
+            || (device.dongle && device.dongle.bootloaderActive);
+        if (!device.connectedDevice || !device.communicationInterfaceAvailable || !device.hasPermission || inBootloader) {
             return {
                 connected: false,
                 model: null,
