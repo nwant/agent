@@ -60,7 +60,7 @@ test('the SDK advertises all read tools and forwards validated lookup arguments'
     await server.start({ port, token: 'test-token', enabled: true });
     const listed = await httpRequest({ port, body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } });
     assert.deepEqual(JSON.parse(listed.text).result.tools.map((tool: { name: string }) => tool.name).sort(),
-        ['get_device_info', 'get_layer', 'get_macro', 'list_keymaps', 'list_macros']);
+        ['get_device_info', 'get_layer', 'get_macro', 'get_unsaved_changes', 'list_keymaps', 'list_macros']);
     const params = { name: 'get_layer', arguments: { keymap: 'Unsaved', layer: 'fn' } };
     const called = await httpRequest({ port, body: { ...toolCall, params } });
     assert.deepEqual(JSON.parse(JSON.parse(called.text).result.content[0].text), params);

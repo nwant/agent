@@ -178,3 +178,170 @@ test('short text actions preserve serializer vocabulary and full smart commands'
     const list = handleMcpTool({ config, keyLabel }, { name: 'list_macros' });
     assert.deepEqual(JSON.parse(list.content[0].text)[0].actionTypes, ['text', 'command']);
 });
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function unsavedFixture(edit: (json: any) => void = () => {}, setup: (json: any) => void = () => {}) {
+    const json = structuredClone(UHK_80_USER_CONFIG);
+    setup(json);
+    const baseline = new UserConfiguration().fromJsonObject(json).toJsonObject();
+    const edited = structuredClone(baseline);
+    edit(edited);
+    const config = new UserConfiguration().fromJsonObject(edited);
+    const read = (state: Partial<Parameters<typeof handleMcpTool>[0]> = {}, reveal = false) => {
+        const reply = handleMcpTool({ config, keyLabel, baseline, ...state }, { name: 'get_unsaved_changes' }, reveal);
+        return { reply, body: reply.isError ? reply.content[0].text : JSON.parse(reply.content[0].text) };
+    };
+    return { baseline, config, read };
+}
+
+test('get_unsaved_changes says there are none when Agent matches the keyboard', () => {
+    const { read } = unsavedFixture();
+    const { reply, body } = read();
+    assert.ok(!reply.isError);
+    assert.deepEqual(body.changes, []);
+    assert.match((body as { summary: string }).summary, /no unsaved changes/i);
+});
+
+test('get_unsaved_changes reports that the keyboard configuration is unknown without a baseline', () => {
+    const { read } = unsavedFixture();
+    const { reply } = read({ baseline: undefined });
+    assert.equal(reply.isError, true);
+    assert.match(reply.content[0].text, /does not know the keyboard's configuration/);
+});
+
+test('get_unsaved_changes lists an edited key with its label and both actions', () => {
+    const none = { keyActionType: 'none' };
+    let abbreviation: string;
+    let before: unknown;
+    const { read } = unsavedFixture(json => {
+        abbreviation = json.keymaps[0].abbreviation;
+        const keyActions = json.keymaps[0].layers.find(layer => layer.id === 'base').modules.find(module => module.id === 0).keyActions;
+        before = keyActions[27];
+        keyActions[27] = none;
+    });
+    const { body } = read();
+    assert.deepEqual(body.changes, [{
+        id: `key:${abbreviation}/base/0/27`,
+        type: 'keyAction',
+        keymap: abbreviation,
+        layer: 'base',
+        moduleId: 0,
+        keyId: 27,
+        label: 'RShift',
+        before,
+        after: none,
+    }]);
+    assert.match((body as { summary: string }).summary, /^1 unsaved change\./);
+});
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const baseKeys = (json: any) => json.keymaps[0].layers.find(layer => layer.id === 'base').modules.find(module => module.id === 0).keyActions;
+const newMacro = { isLooped: false, isPrivate: true, name: 'AAA first', macroActions: [{ macroActionType: 'delay', delay: 50 }] };
+
+test('get_unsaved_changes lists an added macro without reporting keys whose macro index shifted', () => {
+    const { read } = unsavedFixture(json => {
+        json.macros.unshift(newMacro);
+        baseKeys(json)[27] = { keyActionType: 'playMacro', macroIndex: 3, macroArguments: [] };
+    }, json => {
+        baseKeys(json)[27] = { keyActionType: 'playMacro', macroIndex: 2, macroArguments: [] };
+    });
+    const { body } = read();
+    assert.deepEqual(body.changes, [{
+        id: 'macro:AAA first', type: 'macro', name: 'AAA first', change: 'added', before: null, after: newMacro,
+    }]);
+});
+
+test('get_unsaved_changes reports a key that now plays a different macro by name', () => {
+    const { read } = unsavedFixture(json => {
+        baseKeys(json)[27] = { keyActionType: 'playMacro', macroIndex: 1, macroArguments: [] };
+    }, json => {
+        baseKeys(json)[27] = { keyActionType: 'playMacro', macroIndex: 2, macroArguments: [] };
+    });
+    const [entry] = read().body.changes;
+    assert.equal(entry.before.macroName, "Type Silent Bob's address");
+    assert.equal(entry.after.macroName, 'God mode in Doom');
+    assert.equal('macroIndex' in entry.after, false);
+});
+
+test('get_unsaved_changes lists changed and removed macros with both versions', () => {
+    let changedBefore: unknown;
+    let removedBefore: unknown;
+    let changedAfter: unknown;
+    const { read } = unsavedFixture(json => {
+        changedBefore = structuredClone(json.macros[0]);
+        json.macros[0].macroActions.push({ macroActionType: 'delay', delay: 10 });
+        changedAfter = json.macros[0];
+        removedBefore = json.macros.pop();
+    });
+    const changes = read({}, true).body.changes;
+    assert.deepEqual(changes, [
+        { id: 'macro:Go to UHK site in browser', type: 'macro', name: 'Go to UHK site in browser', change: 'changed', before: changedBefore, after: changedAfter },
+        { id: "macro:Type Silent Bob's address", type: 'macro', name: "Type Silent Bob's address", change: 'removed', before: removedBefore, after: null },
+    ]);
+});
+
+test('get_unsaved_changes lists keymap details and settings as other changes, ignoring save metadata', () => {
+    let abbreviation: string;
+    let speed: number;
+    let name: string;
+    const { read } = unsavedFixture(json => {
+        abbreviation = json.keymaps[0].abbreviation;
+        name = json.keymaps[0].name;
+        json.keymaps[0].name = 'Renamed';
+        speed = json.mouseMoveInitialSpeed;
+        json.mouseMoveInitialSpeed = speed + 1;
+        json.lastSaveAgentTag = 'elsewhere/v0';
+        json.userConfigPatchVersion += 1;
+    });
+    const changes = read().body.changes;
+    assert.deepEqual(changes.map(({ id, type }) => ({ id, type })), [
+        { id: `other:keymaps.${abbreviation}`, type: 'other' },
+        { id: 'other:mouseMoveInitialSpeed', type: 'other' },
+    ]);
+    assert.equal(changes[0].path, `keymaps.${abbreviation}`);
+    assert.equal(changes[0].before.name, name);
+    assert.equal(changes[0].after.name, 'Renamed');
+    assert.equal('layers' in changes[0].after, false);
+    assert.deepEqual([changes[1].before, changes[1].after], [speed, speed + 1]);
+});
+
+test('get_unsaved_changes reports an added keymap and each of its keys', () => {
+    const { read } = unsavedFixture(json => {
+        json.keymaps.push({ ...structuredClone(json.keymaps[0]), abbreviation: 'NEW', name: 'New' });
+    });
+    const changes = read().body.changes;
+    const keymap = changes.find(change => change.id === 'other:keymaps.NEW');
+    assert.equal(keymap.before, null);
+    assert.equal(keymap.after.name, 'New');
+    const keys = changes.filter(change => change.type === 'keyAction');
+    assert.ok(keys.length > 0);
+    assert.ok(keys.every(change => change.keymap === 'NEW' && change.before === null));
+});
+
+test('get_unsaved_changes hides text macro contents on both sides unless reveal is enabled', () => {
+    const secret = 'hunter2-🔑';
+    let original: string;
+    const { read } = unsavedFixture(json => {
+        const action = json.macros.find(macro => macro.name === 'God mode in Doom').macroActions[0];
+        original = action.text;
+        action.text = secret;
+    });
+    const hidden = read();
+    assert.ok(!hidden.reply.isError);
+    const text = hidden.reply.content[0].text;
+    assert.equal(text.includes(secret), false);
+    assert.equal(text.includes(original), false);
+    const [entry] = hidden.body.changes;
+    assert.equal(entry.before.macroActions[0].text, `[text macro, ${Array.from(original).length} characters, hidden]`);
+    assert.equal(entry.after.macroActions[0].text, '[text macro, 9 characters, hidden]');
+    assert.equal(read({}, true).body.changes[0].after.macroActions[0].text, secret);
+});
+
+test('get_unsaved_changes names no macro for a key whose macro index is out of range', () => {
+    const { baseline, read } = unsavedFixture(json => {
+        baseKeys(json)[27] = { keyActionType: 'none' };
+    });
+    baseKeys(baseline)[27] = { keyActionType: 'playMacro', macroIndex: 99, macroArguments: [] };
+    const [entry] = read().body.changes;
+    assert.equal(entry.before.macroName, null);
+});

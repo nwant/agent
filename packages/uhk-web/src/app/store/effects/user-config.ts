@@ -33,11 +33,13 @@ import { EmptyAction } from '../actions/app';
 import {
     ActionTypes,
     ApplyUserConfigurationFromFileAction,
+    ForgetKeyboardConfigurationAction,
     LoadConfigFromDeviceReplyAction,
     LoadUserConfigSuccessAction,
     LoadUserConfigurationFromFileAction,
     NavigateToModuleSettings,
     PreviewUserConfigurationAction,
+    RememberKeyboardConfigurationAction,
     SaveUserConfigSuccessAction,
     SelectModuleConfigurationAction,
     UserConfigurationNewerAction
@@ -224,6 +226,7 @@ export class UserConfigEffects {
                     case "success": {
                         this.logService.config('[UserConfigEffect] Loaded user configuration', parsedUserConfiguration.userConfiguration);
                         result.push(new LoadUserConfigSuccessAction(parsedUserConfiguration.userConfiguration));
+                        result.push(new RememberKeyboardConfigurationAction());
                         result.push(new CheckAreHostConnectionsPairedAction());
 
                         if (route.state
@@ -235,6 +238,7 @@ export class UserConfigEffects {
                     }
 
                     case "newer": {
+                        result.push(new ForgetKeyboardConfigurationAction());
                         if (data.backupConfiguration.info === BackupUserConfigurationInfo.LastCompatible
                             || data.backupConfiguration.info === BackupUserConfigurationInfo.EarlierCompatible) {
                             const userConfig = new UserConfiguration().fromJsonObject(data.backupConfiguration.userConfiguration);
@@ -265,6 +269,7 @@ export class UserConfigEffects {
 
                     default: {
                         this.logService.error('Eeprom user-config parse error:', parsedUserConfiguration.error);
+                        result.push(new ForgetKeyboardConfigurationAction());
                         result.push(new BackupUserConfigurationAction(data.backupConfiguration));
                         if (data.backupConfiguration.info === BackupUserConfigurationInfo.LastCompatible
                             || data.backupConfiguration.info === BackupUserConfigurationInfo.EarlierCompatible) {

@@ -86,6 +86,7 @@ import { DefaultUserConfigurationService } from '../../services/default-user-con
 import { DeviceRendererService } from '../../services/device-renderer.service';
 import { DataStorageRepositoryService } from '../../services/datastorage-repository.service';
 import { RouterState } from '../router-util';
+import type { UserConfigurationJson } from '../../mcp/config-diff';
 
 @Injectable()
 export class DeviceEffects {
@@ -96,6 +97,8 @@ export class DeviceEffects {
     private readonly deviceRendererService = inject(DeviceRendererService);
     private readonly router = inject(Router);
     private readonly store = inject<Store<AppState>>(Store);
+    // Serialized configurations of saves in flight, oldest first. Each becomes the keyboard baseline when its save succeeds.
+    private readonly sentConfigurations: UserConfigurationJson[] = [];
 
     changeDevice$ = createEffect(() => this.actions$
         .pipe(
@@ -386,9 +389,10 @@ export class DeviceEffects {
             ofType<SaveConfigurationReplyAction>(ActionTypes.SaveConfigurationReply),
             map(action => action.payload),
             mergeMap((response: IpcResponse) => {
+                const sentConfiguration = this.sentConfigurations.shift();
                 if (response.success) {
                     return [
-                        new SaveToKeyboardSuccessAction()
+                        new SaveToKeyboardSuccessAction(sentConfiguration)
                     ];
                 }
 
@@ -615,11 +619,13 @@ export class DeviceEffects {
         userConfiguration: UserConfiguration,
         hardwareConfig: HardwareConfiguration,
         saveInHistory: boolean): void {
+        const configuration = userConfiguration.toJsonObject();
+        this.sentConfigurations.push(configuration as UserConfigurationJson);
         this.deviceRendererService.saveUserConfiguration({
             saveInHistory,
             deviceId: hardwareConfig && hardwareConfig.deviceId,
             uniqueId: hardwareConfig && hardwareConfig.uniqueId,
-            configuration: userConfiguration.toJsonObject()
+            configuration,
         });
     }
 }

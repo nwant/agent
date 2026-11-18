@@ -22,6 +22,7 @@ import {
 import { FirmwareUpgradeError } from '../../models/firmware-upgrade-error';
 import { UpdateFirmwareWithPayload } from '../../models';
 import { UpdateFirmwareSuccessPayload } from '../../models/update-firmware-success-payload';
+import type { UserConfigurationJson } from '../../mcp/config-diff';
 
 export enum ActionTypes {
     ChangeDevice = '[device] change device',
@@ -186,6 +187,11 @@ export class ShowSaveToKeyboardButtonAction implements Action {
 
 export class SaveToKeyboardSuccessAction implements Action {
     type = ActionTypes.SaveToKeyboardSuccess;
+
+    /**
+     * @param payload - The serialized user configuration that the keyboard accepted
+     */
+    constructor(public payload?: UserConfigurationJson) {}
 }
 
 export class SaveToKeyboardSuccessFailed implements Action {

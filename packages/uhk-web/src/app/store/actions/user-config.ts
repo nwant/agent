@@ -43,6 +43,8 @@ export enum ActionTypes {
     PreviewUserConfiguration = '[user-config] Preview user configuration',
     RecoverLEDSpaces = '[user-config] recover LED spaces',
     UserConfigurationNewer = '[user-config] user configuration is newer that Agent support',
+    RememberKeyboardConfiguration = '[user-config] remember keyboard configuration',
+    ForgetKeyboardConfiguration = '[user-config] forget keyboard configuration',
 }
 
 export class AddColorToBacklightingColorPaletteAction implements Action {
@@ -126,6 +128,20 @@ export class ToggleColorFromBacklightingColorPaletteAction implements Action {
      */
     constructor(public payload: number) {
     }
+}
+
+/**
+ * The user configuration just loaded is what the keyboard has. Must follow the LoadUserConfigSuccessAction.
+ */
+export class RememberKeyboardConfigurationAction implements Action {
+    type = ActionTypes.RememberKeyboardConfiguration;
+}
+
+/**
+ * Agent no longer knows what the keyboard has.
+ */
+export class ForgetKeyboardConfigurationAction implements Action {
+    type = ActionTypes.ForgetKeyboardConfiguration;
 }
 
 export class LoadResetUserConfigurationAction implements Action {
@@ -252,4 +268,6 @@ export type Actions
     | ApplyUserConfigurationFromFileAction
     | RecoverLEDSpacesAction
     | UserConfigurationNewerAction
+    | RememberKeyboardConfigurationAction
+    | ForgetKeyboardConfigurationAction
     ;

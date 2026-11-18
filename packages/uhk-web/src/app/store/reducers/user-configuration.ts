@@ -69,6 +69,7 @@ import {
 import * as AppActions from '../actions/app';
 import * as DeviceActions from '../actions/device';
 import * as Device from '../actions/device';
+import type { UserConfigurationJson } from '../../mcp/config-diff';
 import * as DonglePairing from '../actions/dongle-pairing.action';
 import * as KeymapActions from '../actions/keymap';
 import * as MacroActions from '../actions/macro';
@@ -100,6 +101,8 @@ export interface State {
     copiedLayer?: Layer;
     copiedLayerMacroNames?: Map<number, string>;
     copiedLayerOrigin?: CopiedLayerOrigin;
+    /** Serialized copy of what the keyboard has, or undefined when Agent has not read it. */
+    keyboardBaseline?: UserConfigurationJson;
 }
 
 export const initialState: State = {
@@ -316,12 +319,35 @@ export function reducer(
                 )
             };
 
-        case DeviceActions.ActionTypes.SaveToKeyboardFailed:
+        case DeviceActions.ActionTypes.SaveToKeyboardFailed: {
+            return {
+                ...state,
+                newPairedDevicesAdding: false,
+                newPairedDevices: [],
+            };
+        }
+
         case DeviceActions.ActionTypes.SaveToKeyboardSuccess: {
             return {
                 ...state,
                 newPairedDevicesAdding: false,
                 newPairedDevices: [],
+                keyboardBaseline: (action as DeviceActions.SaveToKeyboardSuccessAction).payload,
+            };
+        }
+
+        case UserConfig.ActionTypes.RememberKeyboardConfiguration: {
+            return {
+                ...state,
+                keyboardBaseline: state.userConfiguration.toJsonObject(),
+            };
+        }
+
+        case UserConfig.ActionTypes.ForgetKeyboardConfiguration:
+        case Device.ActionTypes.ChangeDevice: {
+            return {
+                ...state,
+                keyboardBaseline: undefined,
             };
         }
 
@@ -1440,6 +1466,7 @@ export const getNewPairedDevicesState = (state: State): BleAddingState => {
     };
 };
 export const getUserConfiguration = (state: State): UserConfiguration => state.userConfiguration;
+export const getKeyboardBaseline = (state: State): UserConfigurationJson | undefined => state.keyboardBaseline;
 export const getKeymaps = (state: State): Keymap[] => state.userConfiguration.keymaps;
 export const getDefaultKeymap = (state: State): Keymap => state.userConfiguration.keymaps.find(keymap => keymap.isDefault);
 export const getHostConnections = (state: State): HostConnection[] => {

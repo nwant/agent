@@ -132,6 +132,7 @@ export const getRouterState = (state: AppState) => state.router;
 
 export const getNewPairedDevicesState = createSelector(userConfigState, fromUserConfig.getNewPairedDevicesState);
 export const getUserConfiguration = createSelector(userConfigState, fromUserConfig.getUserConfiguration);
+export const getKeyboardBaseline = createSelector(userConfigState, fromUserConfig.getKeyboardBaseline);
 export const getKeymaps = createSelector(userConfigState, fromUserConfig.getKeymaps);
 export const getHostConnections = createSelector(userConfigState, fromUserConfig.getHostConnections);
 export const getDefaultKeymap = createSelector(userConfigState, fromUserConfig.getDefaultKeymap);

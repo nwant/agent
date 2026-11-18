@@ -1,5 +1,7 @@
 import { LayerName, macroActionType, type McpToolCall, type McpToolReply, type UserConfiguration } from 'uhk-common';
 
+import { diffUserConfiguration, type UserConfigurationJson } from './config-diff.js';
+
 export interface McpDeviceInfo {
     connected: boolean;
     model: string | null;
@@ -10,6 +12,8 @@ export interface McpDeviceInfo {
 interface ToolState {
     info?: McpDeviceInfo;
     config: UserConfiguration;
+    /** The serializer JSON of what the keyboard has, or undefined when Agent has not read it. */
+    baseline?: UserConfigurationJson;
     keyLabel(moduleId: number, keyId: number): string;
 }
 
@@ -63,6 +67,20 @@ function readTool(state: ToolState, call: McpToolCall): unknown {
                 throw new ToolError('Unknown macro. Use list_macros to see available names.');
             }
             return macro.toJsonObject();
+        }
+        case 'get_unsaved_changes': {
+            if (!state.baseline) {
+                throw new ToolError("Agent does not know the keyboard's configuration: it has not been read yet, or Agent could not use it. Connect the keyboard, or load its configuration in Agent, and try again.");
+            }
+            const changes = diffUserConfiguration(state.baseline, config.toJsonObject() as UserConfigurationJson).map(entry => entry.type === 'keyAction'
+                ? { ...entry, label: state.keyLabel(entry.moduleId, entry.keyId) }
+                : entry);
+            return {
+                summary: changes.length
+                    ? `${changes.length} unsaved ${changes.length === 1 ? 'change' : 'changes'}. Save to keyboard in Agent would send all of them.`
+                    : 'No unsaved changes. Agent matches the keyboard.',
+                changes,
+            };
         }
         default:
             throw new ToolError('Unknown tool.');

@@ -4,7 +4,7 @@ import { take } from 'rxjs/operators';
 import { ConfigureMcp, IpcEvents, MCP_MAX_PORT, MCP_MIN_PORT, McpStatus, McpToolRequest } from 'uhk-common';
 import { McpRendererService } from '../../app/services/mcp-renderer.service';
 import { IpcCommonRenderer } from '../../app/services/ipc-common-renderer';
-import { AppState, getMcpDeviceInfo, getUserConfiguration, getDefaultUserConfiguration } from '../../app/store';
+import { AppState, getMcpDeviceInfo, getUserConfiguration, getDefaultUserConfiguration, getKeyboardBaseline } from '../../app/store';
 import { MapperService } from '../../app/services/mapper.service';
 import { getDefaultQwertyKeyLabel } from '../../app/util/get-default-key-label';
 import { handleMcpTool } from '../../app/mcp/tool-handler';
@@ -25,6 +25,7 @@ export class ElectronMcpRendererService extends McpRendererService {
                     reply: handleMcpTool({
                         info: getMcpDeviceInfo(state),
                         config: getUserConfiguration(state),
+                        baseline: getKeyboardBaseline(state),
                         keyLabel: (moduleId, keyId) => getDefaultQwertyKeyLabel({
                             defaultUserConfiguration: getDefaultUserConfiguration(state), moduleId, keyId, mapper: this.mapper,
                         }),

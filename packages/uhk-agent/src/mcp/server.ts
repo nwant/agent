@@ -70,6 +70,7 @@ export class AgentMcpServer {
             registerRead('get_macro', 'Read a macro by name. Text actions are hidden unless enabled in Agent. Smart macro commands, including text typed by write, are visible.', {
                 name: z.string(),
             });
+            registerRead('get_unsaved_changes', 'List every difference between Agent and the keyboard, including the user\'s own edits: key actions, macros and other settings. Save to keyboard in Agent would send all of them. Key actions name the macro they play instead of its index. Text actions are hidden unless enabled in Agent.');
             void (async () => {
                 try {
                     await mcp.connect(transport);
