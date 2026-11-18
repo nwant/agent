@@ -248,7 +248,7 @@ async function windowClosed() {
     // in an array if your app supports multi windows, this is the time
     // when you should delete the corresponding element.
     logger.misc('[Electron Main] win closed');
-    await mcpService.stop();
+    await mcpService?.stop();
     win = null;
     try {
         await deviceService.close();
