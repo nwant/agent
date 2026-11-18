@@ -17,7 +17,7 @@ export function httpRequest(options: {
     body?: unknown;
 }): Promise<{ status: number; headers: IncomingHttpHeaders; text: string }> {
     const { port, path = '/mcp', method = 'POST', token = 'test-token', headers, body: payload = {} } = options;
-    const body = JSON.stringify(payload === null ? {} : payload);
+    const body = JSON.stringify(payload);
     return new Promise((resolve, reject) => {
         const req = request({
             hostname: '127.0.0.1', port, agent: false,

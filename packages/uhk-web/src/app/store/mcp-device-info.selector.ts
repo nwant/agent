@@ -22,10 +22,11 @@ export const getMcpDeviceInfo = createSelector(
             };
         }
 
+        const { rightModuleInfo } = device.modules;
         return {
             connected: true,
             model: device.connectedDevice.name,
-            firmwareVersion: device.modules.rightModuleInfo?.firmwareVersion || null,
+            firmwareVersion: rightModuleInfo && rightModuleInfo.firmwareVersion || null,
             halves: {
                 left: device.halvesInfo.isLeftHalfConnected,
                 right: true,

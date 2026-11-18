@@ -260,14 +260,14 @@ async function windowClosed() {
     appUpdateService = null;
     appService = null;
     fileDialogService = null;
-    sharedConfigService.dispose();
+    sharedConfigService?.dispose();
     sharedConfigService = null;
     await uhkHidDeviceService.close();
     uhkHidDeviceService = null;
     sudoService = null;
     await smartMacroDocService.stop();
     smartMacroDocService = null;
-    trayService.destroy();
+    trayService?.destroy();
     trayService = null;
 }
 

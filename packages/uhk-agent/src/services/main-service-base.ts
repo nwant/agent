@@ -1,4 +1,5 @@
 import { ApplicationSettings, LogService } from 'uhk-common';
+import { getApplicationSettings } from '../util/get-application-settings';
 
 export class MainServiceBase {
     constructor(protected logService: LogService,
@@ -15,7 +16,6 @@ export class MainServiceBase {
     }
 
     protected async getApplicationSettings(): Promise<ApplicationSettings> {
-        const { getApplicationSettings } = await import('../util/get-application-settings');
         return getApplicationSettings();
     }
 
