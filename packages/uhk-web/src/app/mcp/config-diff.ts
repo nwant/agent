@@ -4,6 +4,7 @@
 export interface UserConfigurationJson {
     keymaps: Array<{
         abbreviation: string;
+        name: string;
         layers: Array<{
             id: string;
             modules: Array<{ id: number; keyActions: Array<Record<string, unknown> | null> }>;
@@ -26,6 +27,14 @@ export interface KeyActionDiffEntry {
     after: unknown;
 }
 
+export interface KeymapDiffEntry {
+    id: string;
+    type: 'keymap';
+    change: 'added' | 'removed';
+    abbreviation: string;
+    name: string;
+}
+
 export interface MacroDiffEntry {
     id: string;
     type: 'macro';
@@ -43,7 +52,7 @@ export interface OtherDiffEntry {
     after: unknown;
 }
 
-export type ConfigDiffEntry = KeyActionDiffEntry | MacroDiffEntry | OtherDiffEntry;
+export type ConfigDiffEntry = KeyActionDiffEntry | KeymapDiffEntry | MacroDiffEntry | OtherDiffEntry;
 
 // Version and last-save tags are stamped by Agent and firmware, not edited by the user.
 const SAVE_METADATA = new Set([
@@ -68,9 +77,9 @@ interface KeyAt {
     action: unknown;
 }
 
-function keyActions(keymap: KeymapJson | undefined, macros: UserConfigurationJson['macros']): Map<string, KeyAt> {
+function keyActions(keymap: KeymapJson, macros: UserConfigurationJson['macros']): Map<string, KeyAt> {
     const keys = new Map<string, KeyAt>();
-    for (const layer of keymap?.layers ?? []) {
+    for (const layer of keymap.layers) {
         for (const module of layer.modules) {
             module.keyActions.forEach((action, keyId) => {
                 keys.set(`${layer.id}/${module.id}/${keyId}`, {
@@ -82,10 +91,7 @@ function keyActions(keymap: KeymapJson | undefined, macros: UserConfigurationJso
     return keys;
 }
 
-function keymapDetails(keymap: KeymapJson | undefined): unknown {
-    if (!keymap) {
-        return null;
-    }
+function keymapDetails(keymap: KeymapJson): unknown {
     const { layers, ...details } = keymap;
     return details;
 }
@@ -96,6 +102,12 @@ function diffKeymaps(baseline: UserConfigurationJson, current: UserConfiguration
     for (const abbreviation of abbreviations) {
         const beforeKeymap = baseline.keymaps.find(keymap => keymap.abbreviation === abbreviation);
         const afterKeymap = current.keymaps.find(keymap => keymap.abbreviation === abbreviation);
+        // A keymap on one side only is one entry; its keys are not listed.
+        if (!beforeKeymap || !afterKeymap) {
+            const { name } = beforeKeymap ?? afterKeymap;
+            entries.push({ id: `keymap:${abbreviation}`, type: 'keymap', change: beforeKeymap ? 'removed' : 'added', abbreviation, name });
+            continue;
+        }
         const [beforeDetails, afterDetails] = [keymapDetails(beforeKeymap), keymapDetails(afterKeymap)];
         if (!same(beforeDetails, afterDetails)) {
             const path = `keymaps.${abbreviation}`;

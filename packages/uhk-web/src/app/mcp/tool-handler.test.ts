@@ -340,17 +340,33 @@ test('get_unsaved_changes lists keymap details and settings as other changes, ig
     assert.deepEqual([changes[1].before, changes[1].after], [speed, speed + 1]);
 });
 
-test('get_unsaved_changes reports an added keymap and each of its keys', () => {
+test('get_unsaved_changes reports a duplicated keymap as one added entry without its keys', () => {
     const { read } = unsavedFixture(json => {
-        json.keymaps.push({ ...structuredClone(json.keymaps[0]), abbreviation: 'NEW', name: 'New' });
+        json.keymaps.push({ ...structuredClone(json.keymaps[0]), abbreviation: 'NEW', name: 'New', isDefault: false });
     });
-    const changes = read().body.changes;
-    const keymap = changes.find(change => change.id === 'other:keymaps.NEW');
-    assert.equal(keymap.before, null);
-    assert.equal(keymap.after.name, 'New');
-    const keys = changes.filter(change => change.type === 'keyAction');
-    assert.ok(keys.length > 0);
-    assert.ok(keys.every(change => change.keymap === 'NEW' && change.before === null));
+    assert.deepEqual(read().body.changes, [
+        { id: 'keymap:NEW', type: 'keymap', change: 'added', abbreviation: 'NEW', name: 'New' },
+    ]);
+});
+
+test('get_unsaved_changes reports a deleted keymap as one removed entry without its keys', () => {
+    let abbreviation: string;
+    let name: string;
+    const { read } = unsavedFixture(json => {
+        // Deleting a keymap in Agent also rewrites keys that switch to it, so pick one no key switches to.
+        const targets = new Set<string>();
+        for (const keymap of json.keymaps) for (const layer of keymap.layers) for (const module of layer.modules) for (const action of module.keyActions) {
+            if (action?.keyActionType === 'switchKeymap') {
+                targets.add(String(action.keymapAbbreviation));
+            }
+        }
+        const index = json.keymaps.findIndex(keymap => !keymap.isDefault && !targets.has(String(keymap.abbreviation)));
+        ({ abbreviation, name } = json.keymaps[index]);
+        json.keymaps.splice(index, 1);
+    });
+    assert.deepEqual(read().body.changes, [
+        { id: `keymap:${abbreviation}`, type: 'keymap', change: 'removed', abbreviation, name },
+    ]);
 });
 
 test('get_unsaved_changes hides text macro contents on both sides unless reveal is enabled', () => {
