@@ -1,4 +1,5 @@
-import { app, BrowserWindow, systemPreferences } from 'electron';
+import settings from 'electron-settings';
+import { app, BrowserWindow, ipcMain, systemPreferences } from 'electron';
 import * as process from 'process';
 import setElectronSettingsConfig from './set-electron-settings-config';
 setElectronSettingsConfig();
@@ -24,6 +25,7 @@ import { SharedConfigService } from './services/shared-config.service';
 import { SudoService } from './services/sudo.service';
 import { SmartMacroDocService } from './services/smart-macro-doc.service';
 import { TrayService } from './services/tray.service';
+import { McpService } from './services/mcp.service';
 import isDev from 'electron-is-dev';
 import { setMenu } from './electron-menu';
 import { loadWindowState, saveWindowState } from './util/window';
@@ -65,6 +67,7 @@ let sudoService: SudoService;
 let packagesDir: string;
 let smartMacroDocService: SmartMacroDocService;
 let trayService: TrayService;
+let mcpService: McpService;
 
 let areServicesInited = false;
 
@@ -156,6 +159,19 @@ async function createWindow() {
     sudoService = new SudoService(logger, options, deviceService, packagesDir);
     // and load the index.html of the app.
 
+    // Backstop to Electron's window-all-closed exit: never register IPC handlers twice.
+    if (!mcpService) {
+        mcpService = new McpService({
+            getWindow: () => win,
+            ipc: ipcMain,
+            settings: {
+                get: key => settings.get(key),
+                set: (key, value) => settings.set(key, { ...value }),
+            },
+        });
+        await mcpService.start();
+    }
+
     win.loadURL(url.format({
         pathname: path.join(import.meta.dirname, 'renderer/index.html'),
         protocol: 'file:',
@@ -233,6 +249,7 @@ async function windowClosed() {
     // in an array if your app supports multi windows, this is the time
     // when you should delete the corresponding element.
     logger.misc('[Electron Main] win closed');
+    await mcpService?.stop();
     win = null;
     try {
         await deviceService.close();

@@ -52,3 +52,4 @@ export * from './upload-file-data.js';
 export * from './user-config-history.js';
 export * from './halves-info.js';
 export * from './zephyr-log-entry.js';
+export * from './mcp.js';

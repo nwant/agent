@@ -12,6 +12,7 @@
   "license": "See in LICENSE",
   "dependencies": {
     "@fastify/static": "10.1.2",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@vscode/sudo-prompt": "9.3.2",
     "command-line-args": "6.0.2",
     "command-line-usage": "7.0.4",
@@ -39,6 +40,7 @@
     "install:build-deps": "cd ./dist && npm i --ignore-scripts",
     "download-firmware": "node ../../scripts/download-firmware.js",
     "copy-to-tmp-folder": "node ../../scripts/copy-to-tmp-folder.js",
-    "webpack": "webpack"
+    "webpack": "webpack",
+    "test": "cross-env TS_NODE_COMPILER_OPTIONS={\\\"module\\\":\\\"CommonJS\\\"} node --require=ts-node/register --test \"src/**/*.test.ts\""
   }
 }

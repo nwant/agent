@@ -222,3 +222,30 @@
 <ng-template #minimizeToTrayTooltip>
     <p class="text-center mb-0">On Linux, disabling this option stops minimize-to-tray behaviour immediately, but the tray icon may remain visible until Agent is restarted.</p>
 </ng-template>
+
+<div class="col-12 mt-3" *ngIf="runningInElectron$ | async">
+    <ng-container *ngIf="mcp.status$ | async as ai">
+        <h2 class="h5">AI access</h2>
+        <label>
+            <input type="checkbox" [checked]="ai.enabled"
+                   (change)="mcp.configure({ enabled: $event.target.checked, port: ai.port, regenerateToken: false })">
+            Allow AI clients to read keyboard information
+        </label>
+        <p class="small text-muted">Connect an AI client on this computer. Access continues while Agent is in the system tray.</p>
+        <div class="d-flex align-items-center gap-2">
+            <label class="mb-0" for="ai-access-port">Port:</label>
+            <input id="ai-access-port" type="number" min="1024" max="65535" class="form-control w-auto"
+                   [value]="ai.port"
+                   (change)="mcp.configure({ enabled: ai.enabled, port: +$event.target.value, regenerateToken: false })">
+            <button type="button" class="btn btn-default" [disabled]="!ai.token"
+                    (click)="mcp.configure({ enabled: ai.enabled, port: ai.port, regenerateToken: true })">Regenerate token</button>
+        </div>
+        <p class="small mt-2">Regenerating the token disconnects existing clients. Keep the command private; it contains your access token.</p>
+        <ng-container *ngIf="ai.token">
+            <label for="ai-access-command">Connect Claude Code:</label>
+            <textarea id="ai-access-command" class="form-control" readonly rows="3"
+                      [value]="'claude mcp add --transport http uhk-agent http://127.0.0.1:' + ai.port + '/mcp --header &quot;Authorization: Bearer ' + ai.token + '&quot;'"></textarea>
+        </ng-container>
+        <p *ngIf="ai.error" class="text-danger mt-2" role="alert">{{ ai.error }}</p>
+    </ng-container>
+</div>

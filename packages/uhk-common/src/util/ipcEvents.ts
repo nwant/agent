@@ -113,7 +113,15 @@ export class SharedConfig {
     public static readonly changeDetected = 'shared-config-change-detected';
 }
 
+export class Mcp {
+    public static readonly getSettings = 'mcp-get-settings';
+    public static readonly configure = 'mcp-configure';
+    public static readonly request = 'mcp-tool-request';
+    public static readonly response = 'mcp-tool-response';
+}
+
 export class IpcEvents {
+    public static readonly mcp = Mcp;
     public static readonly app = App;
     public static readonly autoUpdater = AutoUpdate;
     public static readonly device = Device;

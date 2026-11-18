@@ -1,6 +1,8 @@
-import { ErrorHandler, NgModule } from '@angular/core';
+import { ErrorHandler, NgModule, inject } from '@angular/core';
 import { BrowserModule } from '@angular/platform-browser';
 import { LogService } from 'uhk-common';
+import { McpRendererService } from '../app/services/mcp-renderer.service';
+import { ElectronMcpRendererService } from './services/electron-mcp-renderer.service';
 import { ElectronDataStorageRepositoryService } from './services/electron-datastorage-repository.service';
 import { ElectronFileDialogService } from './services/electron-file-dialog.service';
 import { ElectronSharedConfigService } from './services/electron-shared-config.service';
@@ -36,6 +38,7 @@ import { CustomRouterStateSerializer } from '../app/store/router-util';
         EffectsModule.forRoot(effects)
     ],
     providers: [
+        {provide: McpRendererService, useClass: ElectronMcpRendererService},
         {provide: DataStorageRepositoryService, useClass: ElectronDataStorageRepositoryService},
         {provide: FileDialogService, useClass: ElectronFileDialogService},
         {provide: SharedConfigService, useClass: ElectronSharedConfigService},
@@ -46,4 +49,5 @@ import { CustomRouterStateSerializer } from '../app/store/router-util';
     bootstrap: [MainAppComponent]
 })
 export class UhkRendererModule {
+    private readonly mcpRenderer = inject(McpRendererService);
 }

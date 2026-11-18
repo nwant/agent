@@ -20,6 +20,7 @@ import {
     getOperatingSystem,
     getSharedConfigurationFilePath,
     keyboardHalvesAlwaysJoined,
+    runningInElectron,
 } from '../../../store';
 import { MACRO_GROUPING_MAX_DEPTH } from '../../../util/group-macros-by-name';
 import { State as UpdateSettingsState } from '../../../store/reducers/auto-update-settings';
@@ -40,6 +41,7 @@ import {
 } from '../../../store/actions/app';
 import { ToggleAlwaysEnableAdvancedModeAction } from '../../../store/actions/advance-settings.action';
 import { OperatingSystem } from '../../../models/operating-system';
+import { McpRendererService } from '../../../services/mcp-renderer.service';
 import { FileDialogService } from '../../../services/file-dialog.service';
 
 type ThemeOption = {
@@ -81,8 +83,11 @@ export class SettingsComponent {
         { id: AppTheme.Dark, text: 'Dark', icon: faMoon },
     ];
 
+    readonly mcp = inject(McpRendererService);
     private readonly store = inject<Store<AppState>>(Store);
     private readonly fileDialogService = inject(FileDialogService);
+
+    readonly runningInElectron$ = this.store.select(runningInElectron);
 
     constructor() {
         this.updateSettingsState$ = this.store.select(appUpdateSettingsState);
