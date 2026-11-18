@@ -17,10 +17,16 @@ test('HTTP enforces access before dispatching MCP and serves only POST /mcp', as
     const settings = { enabled: true, port, token: 'test-token' };
     await server.start(settings);
     for (const headers of [{ Origin: 'https://example.com' }, { Host: `localhost:${port}` }]) {
-        assert.equal((await httpRequest({ port, headers, body: toolCall })).status, 403);
+        const forbidden = await httpRequest({ port, headers, body: toolCall });
+        assert.equal(forbidden.status, 403);
+        assert.equal(forbidden.headers['www-authenticate'], undefined);
     }
-    assert.equal((await httpRequest({ port, token: '', body: toolCall })).status, 401);
-    assert.equal((await httpRequest({ port, token: 'wrong', body: toolCall })).status, 401);
+    const missing = await httpRequest({ port, headers: { Authorization: '' }, body: toolCall });
+    assert.equal(missing.status, 401);
+    assert.equal(missing.headers['www-authenticate'], 'Bearer');
+    const wrong = await httpRequest({ port, token: 'wrong', body: toolCall });
+    assert.equal(wrong.status, 401);
+    assert.equal(wrong.headers['www-authenticate'], 'Bearer error="invalid_token"');
     assert.equal((await httpRequest({ port, path: '/other', body: toolCall })).status, 404);
     assert.equal((await httpRequest({ port, method: 'GET' })).status, 405);
     assert.equal(calls, 0);

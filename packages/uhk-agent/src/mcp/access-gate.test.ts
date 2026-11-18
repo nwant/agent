@@ -11,7 +11,7 @@ test('AI access is off by default', () => {
 });
 
 test('missing or wrong bearer tokens are rejected', () => {
-    for (const authorization of [undefined, '', 'Bearer wrong', 'Basic test-token']) {
+    for (const authorization of [undefined, '', 'Bearer wrong', 'Bearer test-tokem', 'Bearer test-tokén', 'Basic test-token']) {
         assert.equal(checkMcpAccess({ ...request, authorization }, settings), 401);
     }
     assert.equal(checkMcpAccess({ ...request, authorization: 'Bearer ' }, { ...settings, token: '' }), 401);

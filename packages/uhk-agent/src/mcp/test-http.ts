@@ -1,4 +1,4 @@
-import { createServer, request } from 'node:http';
+import { createServer, request, type IncomingHttpHeaders } from 'node:http';
 
 export async function availablePort(): Promise<number> {
     const probe = createServer();
@@ -15,7 +15,7 @@ export function httpRequest(options: {
     method?: string;
     headers?: Record<string, string>;
     body?: unknown;
-}): Promise<{ status: number; text: string }> {
+}): Promise<{ status: number; headers: IncomingHttpHeaders; text: string }> {
     const body = JSON.stringify(options.body ?? {});
     return new Promise((resolve, reject) => {
         const req = request({
@@ -31,7 +31,7 @@ export function httpRequest(options: {
             let text = '';
             res.setEncoding('utf8');
             res.on('data', (chunk: string) => text += chunk);
-            res.on('end', () => resolve({ status: res.statusCode, text }));
+            res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, text }));
         });
         req.setTimeout(2_000, () => req.destroy(new Error('HTTP request timed out.')));
         req.on('error', reject);

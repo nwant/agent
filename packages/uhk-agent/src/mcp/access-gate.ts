@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import type { IncomingHttpHeaders } from 'node:http';
 import type { McpSettings } from 'uhk-common';
 
@@ -6,9 +7,11 @@ export function checkMcpAccess(headers: IncomingHttpHeaders, settings: McpSettin
         return 403;
     }
 
-    if (!settings.token || headers.authorization !== `Bearer ${settings.token}`) {
+    if (!settings.token || !headers.authorization) {
         return 401;
     }
 
-    return 200;
+    const expected = Buffer.from(`Bearer ${settings.token}`);
+    const provided = Buffer.from(headers.authorization);
+    return provided.length === expected.length && timingSafeEqual(provided, expected) ? 200 : 401;
 }

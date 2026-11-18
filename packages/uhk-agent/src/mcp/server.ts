@@ -14,7 +14,14 @@ export class AgentMcpServer {
         this.server = createServer((req, res) => {
             const status = checkMcpAccess(req.headers, settings);
             if (status !== 200) {
-                res.writeHead(status).end('AI access denied.');
+                if (status === 401) {
+                    const challenge = req.headers.authorization?.startsWith('Bearer ')
+                        ? 'Bearer error="invalid_token"'
+                        : 'Bearer';
+                    res.writeHead(401, { 'WWW-Authenticate': challenge }).end('Unauthorized. Use the current token from Agent Settings.');
+                } else {
+                    res.writeHead(status).end('AI access denied.');
+                }
                 return;
             }
             if (req.url !== '/mcp') {
