@@ -248,7 +248,7 @@ async function windowClosed() {
     // in an array if your app supports multi windows, this is the time
     // when you should delete the corresponding element.
     logger.misc('[Electron Main] win closed');
-    await mcpService?.stop();
+    await mcpService.stop();
     win = null;
     try {
         await deviceService.close();
@@ -260,14 +260,14 @@ async function windowClosed() {
     appUpdateService = null;
     appService = null;
     fileDialogService = null;
-    sharedConfigService?.dispose();
+    sharedConfigService.dispose();
     sharedConfigService = null;
     await uhkHidDeviceService.close();
     uhkHidDeviceService = null;
     sudoService = null;
     await smartMacroDocService.stop();
     smartMacroDocService = null;
-    trayService?.destroy();
+    trayService.destroy();
     trayService = null;
 }
 

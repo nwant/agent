@@ -15,7 +15,8 @@ export class AgentMcpServer {
             const status = checkMcpAccess(req.headers, settings);
             if (status !== 200) {
                 if (status === 401) {
-                    const challenge = req.headers.authorization?.startsWith('Bearer ')
+                    const { authorization = '' } = req.headers;
+                    const challenge = authorization.startsWith('Bearer ')
                         ? 'Bearer error="invalid_token"'
                         : 'Bearer';
                     res.writeHead(401, { 'WWW-Authenticate': challenge }).end('Unauthorized. Use the current token from Agent Settings.');

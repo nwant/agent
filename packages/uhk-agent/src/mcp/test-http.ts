@@ -16,16 +16,17 @@ export function httpRequest(options: {
     headers?: Record<string, string>;
     body?: unknown;
 }): Promise<{ status: number; headers: IncomingHttpHeaders; text: string }> {
-    const body = JSON.stringify(options.body ?? {});
+    const { port, path = '/mcp', method = 'POST', token = 'test-token', headers, body: payload = {} } = options;
+    const body = JSON.stringify(payload === null ? {} : payload);
     return new Promise((resolve, reject) => {
         const req = request({
-            hostname: '127.0.0.1', port: options.port, agent: false,
-            path: options.path ?? '/mcp', method: options.method ?? 'POST',
+            hostname: '127.0.0.1', port, agent: false,
+            path, method,
             headers: {
-                Authorization: `Bearer ${options.token ?? 'test-token'}`,
+                Authorization: `Bearer ${token}`,
                 'Content-Length': Buffer.byteLength(body),
                 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream',
-                ...options.headers,
+                ...headers,
             },
         }, res => {
             let text = '';

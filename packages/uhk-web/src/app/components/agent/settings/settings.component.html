@@ -214,11 +214,13 @@
 <div class="col-12 mt-3" *ngIf="runningInElectron$ | async">
     <ng-container *ngIf="mcpStatus$ | async as ai">
         <h2 class="h5">AI access</h2>
-        <label>
-            <input type="checkbox" [checked]="ai.enabled"
-                   (change)="configureMcp({ enabled: $event.target.checked })">
-            Allow AI clients to read keyboard information
-        </label>
+        <div class="checkbox d-inline-block mb-0 mt-0">
+            <label>
+                <input type="checkbox" [checked]="ai.enabled"
+                       (change)="configureMcp({ enabled: $event.target.checked })">
+                Allow AI clients to read keyboard information
+            </label>
+        </div>
         <p class="small text-muted">Connect an AI client on this computer. Access continues while Agent is in the system tray.</p>
         <div class="d-flex align-items-center gap-2">
             <label class="mb-0" for="ai-access-port">Port:</label>
