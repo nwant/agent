@@ -29,7 +29,8 @@
     "uhk-common": "file:../uhk-common",
     "uhk-fs": "file:../uhk-fs",
     "uhk-smart-macro": "file:../uhk-smart-macro",
-    "uhk-usb": "file:../uhk-usb"
+    "uhk-usb": "file:../uhk-usb",
+    "zod": "4.6.7"
   },
   "scripts": {
     "start": "cross-env DEBUG=kboot*,mcumgr* NODE_OPTIONS=\"--enable-source-maps\" electron ./dist/electron-main.js",

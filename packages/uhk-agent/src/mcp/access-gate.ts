@@ -2,7 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import type { IncomingHttpHeaders } from 'node:http';
 import type { McpSettings } from 'uhk-common';
 
-export function checkMcpAccess(headers: IncomingHttpHeaders, settings: McpSettings): number {
+export function checkMcpAccess(headers: IncomingHttpHeaders, settings: Pick<McpSettings, 'enabled' | 'port' | 'token'>): number {
     if (!settings.enabled || headers.origin !== undefined || headers.host !== `127.0.0.1:${settings.port}`) {
         return 403;
     }

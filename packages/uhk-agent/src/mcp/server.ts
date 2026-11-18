@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { createServer, Server } from 'node:http';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -10,7 +11,7 @@ export class AgentMcpServer {
 
     constructor(private readonly request: (call: McpToolCall) => Promise<McpToolReply>) {}
 
-    async start(settings: McpSettings): Promise<void> {
+    async start(settings: Pick<McpSettings, 'enabled' | 'port' | 'token'>): Promise<void> {
         this.server = createServer((req, res) => {
             const status = checkMcpAccess(req.headers, settings);
             if (status !== 200) {
@@ -44,19 +45,30 @@ export class AgentMcpServer {
                 this.active.delete(mcp);
                 void mcp.close();
             });
-            mcp.registerTool('get_device_info', {
-                description: 'Read the connected keyboard model, firmware version, connection state and physical halves from Agent.',
-                inputSchema: {},
-                annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-            }, async () => {
-                try {
-                    return { ...await this.request({ name: 'get_device_info' }) };
-                } catch (error) {
-                    return {
-                        isError: true,
-                        content: [{ type: 'text', text: error instanceof Error ? error.message : 'Agent window is unavailable.' }],
-                    };
-                }
+            const registerRead = (name: string, description: string, inputSchema: Record<string, z.ZodString> = {}) => {
+                mcp.registerTool(name, {
+                    description,
+                    inputSchema,
+                    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+                }, async args => {
+                    try {
+                        return { ...await this.request({ name, arguments: args }) };
+                    } catch (error) {
+                        return {
+                            isError: true,
+                            content: [{ type: 'text', text: error instanceof Error ? error.message : 'Agent window is unavailable.' }],
+                        };
+                    }
+                });
+            };
+            registerRead('get_device_info', 'Read the connected keyboard model, firmware version, connection state and physical halves from Agent.');
+            registerRead('list_keymaps', 'List current keymap names, abbreviations and layers, including unsaved changes.');
+            registerRead('get_layer', 'Read physical key labels and serialized actions. Use a keymap abbreviation or unique name and a layer from list_keymaps.', {
+                keymap: z.string(), layer: z.string(),
+            });
+            registerRead('list_macros', 'List current macro names and their action types.');
+            registerRead('get_macro', 'Read a macro by name. Text actions are hidden unless enabled in Agent. Smart macro commands, including text typed by write, are visible.', {
+                name: z.string(),
             });
             void (async () => {
                 try {

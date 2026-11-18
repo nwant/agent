@@ -9,7 +9,7 @@ export class McpRendererBridge {
         ipc: EventEmitter;
     }) {}
 
-    request(call: McpToolCall): Promise<McpToolReply> {
+    request(call: McpToolCall, revealTextMacros = false): Promise<McpToolReply> {
         const win = this.options.getWindow();
         if (!win || win.isDestroyed() || win.webContents.isDestroyed() || win.webContents.isLoadingMainFrame()) {
             return Promise.reject(new Error('Agent window is unavailable or still loading.'));
@@ -45,7 +45,7 @@ export class McpRendererBridge {
             sender.once('render-process-gone', unavailable);
             sender.once('did-start-loading', unavailable);
             try {
-                sender.send(IpcEvents.mcp.request, { id, call });
+                sender.send(IpcEvents.mcp.request, { id, call, revealTextMacros });
             } catch {
                 unavailable();
             }

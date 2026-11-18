@@ -1,4 +1,5 @@
 export interface McpSettings {
+    revealTextMacros: boolean;
     enabled: boolean;
     port: number;
     token: string;
@@ -13,11 +14,13 @@ export function isMcpPort(port: unknown): port is number {
 
 export const DEFAULT_MCP_SETTINGS: McpSettings = {
     enabled: false,
+    revealTextMacros: false,
     port: 53417,
     token: '',
 };
 
 export interface ConfigureMcp {
+    revealTextMacros: boolean;
     enabled: boolean;
     port: number;
     regenerateToken: boolean;
@@ -29,6 +32,7 @@ export interface McpStatus extends McpSettings {
 
 export interface McpToolCall {
     name: string;
+    arguments?: Record<string, string>;
 }
 
 export interface McpToolReply {
@@ -37,6 +41,7 @@ export interface McpToolReply {
 }
 
 export interface McpToolRequest {
+    revealTextMacros: boolean;
     id: string;
     call: McpToolCall;
 }

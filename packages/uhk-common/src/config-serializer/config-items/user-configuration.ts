@@ -1584,7 +1584,7 @@ export class UserConfiguration implements AdvancedSecondaryRoleConfiguration, Mo
         return true;
     }
 
-    private getSerialisationInfo(): SerialisationInfo {
+    getSerialisationInfo(): SerialisationInfo {
         return {
             isUserConfigContainsRgbColors: this.perKeyRgbPresent,
             userConfigMajorVersion: this.userConfigMajorVersion,

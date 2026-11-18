@@ -51,7 +51,7 @@ test('AI access starts disabled, generates a token and persists application sett
     assert.equal(status.enabled, false);
     assert.equal(status.port, DEFAULT_MCP_SETTINGS.port);
     assert.match(status.token, /^[a-f0-9]{64}$/);
-    assert.deepEqual(fixture.stored(), { enabled: false, port: 53417, token: status.token });
+    assert.deepEqual(fixture.stored(), { enabled: false, port: 53417, token: status.token, revealTextMacros: false });
 });
 
 test('saved port and token are restored, with malformed saved values replaced', async context => {
@@ -87,7 +87,7 @@ test('configure rejects invalid input and callers outside the Agent main frame',
     }
     fixture.destroyWindow();
     await assert.rejects(fixture.invoke(IpcEvents.mcp.getSettings), /Unknown Agent window/);
-    assert.deepEqual(fixture.stored(), { enabled: false, port: 53418, token });
+    assert.deepEqual(fixture.stored(), { enabled: false, port: 53418, token, revealTextMacros: false });
 });
 
 test('enable, regenerate, restart and disable control the listener and durable credential', async context => {
@@ -157,4 +157,21 @@ test('quick configure requests apply in order even when the first write is pendi
     assert.deepEqual(writes, [false, true, false]);
     assert.equal(fixture.stored().enabled, false);
     await assert.rejects(httpRequest({ port, token }), { code: 'ECONNREFUSED' });
+});
+
+test('text macro reveal requires explicit opt-in and persists through restarts', async context => {
+    const fixture = setup({ enabled: false, port: 53418, token, revealTextMacros: 'true' });
+    context.after(() => fixture.service.stop());
+    await fixture.service.start();
+    assert.equal(fixture.stored().revealTextMacros, false);
+    const input = { enabled: false, port: 53418, regenerateToken: false };
+    await fixture.invoke(IpcEvents.mcp.configure, { ...input, revealTextMacros: 'false' });
+    assert.equal(fixture.stored().revealTextMacros, false);
+    await fixture.invoke(IpcEvents.mcp.configure, { ...input, revealTextMacros: true });
+    const restarted = setup(fixture.stored());
+    context.after(() => restarted.service.stop());
+    await restarted.service.start();
+    assert.equal((await restarted.invoke(IpcEvents.mcp.getSettings)).revealTextMacros, true);
+    await restarted.invoke(IpcEvents.mcp.configure, { ...input, revealTextMacros: false });
+    assert.equal(restarted.stored().revealTextMacros, false);
 });

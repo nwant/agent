@@ -52,3 +52,16 @@ test('HTTP tool errors are clear and access is rejected when disabled', async co
     assert.equal(result.result.isError, true);
     assert.match(result.result.content[0].text, /Agent window is unavailable/);
 });
+
+test('the SDK advertises all read tools and forwards validated lookup arguments', async context => {
+    const port = await availablePort();
+    const server = new AgentMcpServer(async call => ({ content: [{ type: 'text', text: JSON.stringify(call) }] }));
+    context.after(() => server.stop());
+    await server.start({ port, token: 'test-token', enabled: true });
+    const listed = await httpRequest({ port, body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } });
+    assert.deepEqual(JSON.parse(listed.text).result.tools.map((tool: { name: string }) => tool.name).sort(),
+        ['get_device_info', 'get_layer', 'get_macro', 'list_keymaps', 'list_macros']);
+    const params = { name: 'get_layer', arguments: { keymap: 'Unsaved', layer: 'fn' } };
+    const called = await httpRequest({ port, body: { ...toolCall, params } });
+    assert.deepEqual(JSON.parse(JSON.parse(called.text).result.content[0].text), params);
+});
