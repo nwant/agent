@@ -289,7 +289,9 @@ export class MainAppComponent implements OnDestroy {
             event.key === 's' &&
             !event.defaultPrevented &&
             !this.keypressCapturing) {
-            this.clickedOnProgressButton(this.saveToKeyboardState.action);
+            if (this.saveToKeyboardState.action) {
+                this.clickedOnProgressButton(this.saveToKeyboardState.action);
+            }
             event.preventDefault();
         }
 
