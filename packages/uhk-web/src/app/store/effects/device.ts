@@ -353,12 +353,12 @@ export class DeviceEffects {
             mergeMap(([action, state, shouldUpgradeFirmware]) => {
                 if (shouldUpgradeFirmware) {
                     this.router.navigate(['/update-firmware']);
-                    return EMPTY;
+                    return [new SaveToKeyboardSuccessFailed()];
                 }
 
                 if (state.userConfiguration.userConfiguration.hostConnections.length > HOST_CONNECTION_COUNT_MAX) {
-                    this.router.navigate(['/host-connections']);
-                    return EMPTY;
+                    this.router.navigate(['/device/host-connections']);
+                    return [new SaveToKeyboardSuccessFailed()];
                 }
 
                 const userConfig = state.userConfiguration.userConfiguration;
