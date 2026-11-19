@@ -58,12 +58,14 @@ export class AgentMcpServer {
             }, async () => ({
                 contents: [{ uri: REFERENCE_MANUAL_URI, mimeType: REFERENCE_MANUAL_MIME_TYPE, text: await this.readReferenceManual() }],
             }));
-            const registerRead = (name: string, description: string, inputSchema: Record<string, z.ZodString> = {}) => {
+            const registerTool = (name: string, description: string, inputSchema: z.ZodRawShape, readOnly: boolean) => {
                 mcp.registerTool(name, {
                     description,
                     inputSchema,
-                    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-                }, async args => {
+                    annotations: readOnly
+                        ? { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
+                        : { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+                }, async (args: Record<string, unknown>) => {
                     try {
                         return { ...await this.request({ name, arguments: args }) };
                     } catch (error) {
@@ -74,6 +76,8 @@ export class AgentMcpServer {
                     }
                 });
             };
+            const registerRead = (name: string, description: string, inputSchema: Record<string, z.ZodString> = {}) =>
+                registerTool(name, description, inputSchema, true);
             registerRead('get_device_info', 'Read the connected keyboard model, firmware version, connection state and physical halves from Agent.');
             registerRead('list_keymaps', 'List current keymap names, abbreviations and layers, including unsaved changes.');
             registerRead('get_layer', 'Read physical key labels and serialized actions. Use a keymap abbreviation or unique name and a layer from list_keymaps.', {
@@ -90,7 +94,25 @@ export class AgentMcpServer {
             ].join(' '), {
                 name: z.string(),
             });
-            registerRead('get_unsaved_changes', 'List every difference between Agent and the keyboard, including the user\'s own edits: key actions, macros and other settings. Save to keyboard in Agent would send all of them. Key actions name the macro they play instead of its index. Text actions are hidden unless enabled in Agent.');
+            registerRead('get_unsaved_changes', [
+                'List every difference between Agent and the keyboard, including the user\'s own edits: key actions, keymaps added or removed, macros and other settings.',
+                'Save to keyboard in Agent would send all of them.',
+                'aiTagged marks entries that an AI client\'s proposed changes touched.',
+                'Key actions name the macro they play instead of its index. Text actions are hidden unless enabled in Agent.',
+            ].join(' '));
+            registerTool('set_key_action', [
+                'Change one key in Agent\'s unsaved changes. Nothing is written to the keyboard: the user reviews the change and clicks Save to keyboard in Agent.',
+                'Use a keymap abbreviation or unique name and a layer from list_keymaps, and a moduleId and keyId from get_layer.',
+                'action takes the serialized shape get_layer returns (playMacro uses macroIndex, the position in list_macros), or "none" to clear the key.',
+                'Agent refuses the change if the keymap, layer, key or macro does not exist or the configuration would not serialize.',
+                'Passing the checks proves the configuration loads, not that it works: the user must save and press the key.',
+            ].join(' '), {
+                keymap: z.string(),
+                layer: z.string(),
+                moduleId: z.number().int(),
+                keyId: z.number().int(),
+                action: z.union([z.literal('none'), z.record(z.string(), z.unknown())]),
+            }, false);
             registerRead('get_macro_errors', 'Read cached firmware macro errors and the latest status text, including setStatus output, after saving and pressing the assigned key.');
             void (async () => {
                 try {

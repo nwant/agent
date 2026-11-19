@@ -32,7 +32,7 @@ export interface McpStatus extends McpSettings {
 
 export interface McpToolCall {
     name: string;
-    arguments?: Record<string, string>;
+    arguments?: Record<string, unknown>;
 }
 
 export interface McpToolReply {

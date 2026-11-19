@@ -41,6 +41,7 @@ export enum ActionTypes {
     LoadTypingBehaviorPreset = '[user-config] Load typing behavior preset',
     ApplyUserConfigurationFromFile = '[user-config] Apply user configuration from file',
     PreviewUserConfiguration = '[user-config] Preview user configuration',
+    ApplyAiUserConfiguration = '[user-config] Apply AI user configuration',
     RecoverLEDSpaces = '[user-config] recover LED spaces',
     UserConfigurationNewer = '[user-config] user configuration is newer that Agent support',
     RememberKeyboardConfiguration = '[user-config] remember keyboard configuration',
@@ -102,6 +103,17 @@ export class PreviewUserConfigurationAction implements Action {
     type = ActionTypes.PreviewUserConfiguration;
 
     constructor(public payload: UserConfiguration) {
+    }
+}
+
+/**
+ * An AI client's proposed change. Same effect on the configuration as PreviewUserConfigurationAction,
+ * but keeps the selected keymap, macro and layer.
+ */
+export class ApplyAiUserConfigurationAction implements Action {
+    type = ActionTypes.ApplyAiUserConfiguration;
+
+    constructor(public payload: { userConfiguration: UserConfiguration; aiTags: string[] }) {
     }
 }
 
@@ -254,6 +266,7 @@ export type Actions
     | SaveUserConfigInBinaryFileAction
     | LoadResetUserConfigurationAction
     | PreviewUserConfigurationAction
+    | ApplyAiUserConfigurationAction
     | RenameHostConnectionAction
     | RenameUserConfigurationAction
     | ReorderHostConnectionsAction

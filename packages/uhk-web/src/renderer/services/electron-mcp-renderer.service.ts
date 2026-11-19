@@ -4,7 +4,8 @@ import { take } from 'rxjs/operators';
 import { ConfigureMcp, IpcEvents, MCP_MAX_PORT, MCP_MIN_PORT, McpStatus, McpToolRequest } from 'uhk-common';
 import { McpRendererService } from '../../app/services/mcp-renderer.service';
 import { IpcCommonRenderer } from '../../app/services/ipc-common-renderer';
-import { AppState, getMcpDeviceInfo, getUserConfiguration, getDefaultUserConfiguration, getKeyboardBaseline, getLatestStatusBuffer } from '../../app/store';
+import { AppState, getAiTags, getMcpDeviceInfo, getUserConfiguration, getDefaultUserConfiguration, getKeyboardBaseline, getLatestStatusBuffer } from '../../app/store';
+import { ApplyAiUserConfigurationAction } from '../../app/store/actions/user-config';
 import { MapperService } from '../../app/services/mapper.service';
 import { getDefaultQwertyKeyLabel } from '../../app/util/get-default-key-label';
 import { handleMcpTool } from '../../app/mcp/tool-handler';
@@ -20,18 +21,20 @@ export class ElectronMcpRendererService extends McpRendererService {
         super();
         this.ipcRenderer.on(IpcEvents.mcp.request, (_event: unknown, request: McpToolRequest) => {
             this.store.pipe(take(1)).subscribe(state => {
-                this.ipcRenderer.send(IpcEvents.mcp.response, {
-                    id: request.id,
-                    reply: handleMcpTool({
-                        info: getMcpDeviceInfo(state),
-                        config: getUserConfiguration(state),
-                        baseline: getKeyboardBaseline(state),
-                        statusText: getLatestStatusBuffer(state),
-                        keyLabel: (moduleId, keyId) => getDefaultQwertyKeyLabel({
-                            defaultUserConfiguration: getDefaultUserConfiguration(state), moduleId, keyId, mapper: this.mapper,
-                        }),
-                    }, request.call, request.revealTextMacros),
-                });
+                const { next, ...reply } = handleMcpTool({
+                    info: getMcpDeviceInfo(state),
+                    config: getUserConfiguration(state),
+                    baseline: getKeyboardBaseline(state),
+                    statusText: getLatestStatusBuffer(state),
+                    aiTags: getAiTags(state),
+                    keyLabel: (moduleId, keyId) => getDefaultQwertyKeyLabel({
+                        defaultUserConfiguration: getDefaultUserConfiguration(state), moduleId, keyId, mapper: this.mapper,
+                    }),
+                }, request.call, request.revealTextMacros);
+                if (next) {
+                    this.store.dispatch(new ApplyAiUserConfigurationAction({ userConfiguration: next.config, aiTags: next.aiTags }));
+                }
+                this.ipcRenderer.send(IpcEvents.mcp.response, { id: request.id, reply });
             });
         });
         this.loaded = this.load();

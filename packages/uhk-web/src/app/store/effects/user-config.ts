@@ -39,6 +39,7 @@ import {
     LoadUserConfigurationFromFileAction,
     NavigateToModuleSettings,
     PreviewUserConfigurationAction,
+    ApplyAiUserConfigurationAction,
     RememberKeyboardConfigurationAction,
     SaveUserConfigSuccessAction,
     SelectModuleConfigurationAction,
@@ -465,7 +466,10 @@ export class UserConfigEffects {
 
     previewUserConfiguration$ = createEffect(() => this.actions$
         .pipe(
-            ofType<PreviewUserConfigurationAction>(ActionTypes.PreviewUserConfiguration),
+            ofType<PreviewUserConfigurationAction | ApplyAiUserConfigurationAction>(
+                ActionTypes.PreviewUserConfiguration,
+                ActionTypes.ApplyAiUserConfiguration,
+            ),
             map(() => new ShowSaveToKeyboardButtonAction())
         )
     );

@@ -97,7 +97,7 @@ test('HTTP tool errors are clear and access is rejected when disabled', async co
     assert.match(result.result.content[0].text, /Agent window is unavailable/);
 });
 
-test('the SDK advertises all read tools and forwards validated lookup arguments', async context => {
+test('the SDK advertises all tools and forwards validated lookup arguments', async context => {
     const port = await availablePort();
     const server = new AgentMcpServer(async call => ({ content: [{ type: 'text', text: JSON.stringify(call) }] }), unexpectedManual);
     context.after(() => server.stop());
@@ -105,7 +105,8 @@ test('the SDK advertises all read tools and forwards validated lookup arguments'
     const listed = await httpRequest({ port, body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } });
     const tools = JSON.parse(listed.text).result.tools as { name: string; description: string }[];
     assert.deepEqual(tools.map(tool => tool.name).sort(),
-        ['get_device_info', 'get_layer', 'get_macro', 'get_macro_errors', 'get_unsaved_changes', 'list_keymaps', 'list_macros']);
+        ['get_device_info', 'get_layer', 'get_macro', 'get_macro_errors', 'get_unsaved_changes', 'list_keymaps', 'list_macros', 'set_key_action']);
+    assert.match(tools.find(tool => tool.name === 'get_unsaved_changes').description, /keymap.*added or removed/i);
     const macroTool = tools.find(tool => tool.name === 'get_macro');
     assert.ok(macroTool);
     assert.match(macroTool.description, /text typed by `write`.*visible/i);
@@ -116,4 +117,25 @@ test('the SDK advertises all read tools and forwards validated lookup arguments'
     const called = await httpRequest({ port, body: { ...toolCall, params } });
     const { result } = JSON.parse(called.text) as { result: McpToolReply };
     assert.deepEqual(JSON.parse(result.content[0].text), params);
+});
+
+test('set_key_action is advertised as a write and forwards numeric key IDs and the action object', async context => {
+    const port = await availablePort();
+    const server = new AgentMcpServer(async call => ({ content: [{ type: 'text', text: JSON.stringify(call) }] }), unexpectedManual);
+    context.after(() => server.stop());
+    await server.start({ port, token: 'test-token', enabled: true });
+    const listed = await httpRequest({ port, body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } });
+    const tool = (JSON.parse(listed.text).result.tools as { name: string; description: string; annotations: Record<string, boolean> }[])
+        .find(item => item.name === 'set_key_action');
+    assert.equal(tool.annotations.readOnlyHint, false);
+    assert.match(tool.description, /nothing is written to the keyboard/i);
+    for (const action of [{ keyActionType: 'keystroke', type: 'basic', scancode: 4 }, 'none']) {
+        const params = { name: 'set_key_action', arguments: { keymap: 'QWR', layer: 'base', moduleId: 0, keyId: 27, action } };
+        const called = await httpRequest({ port, body: { ...toolCall, params } });
+        const { result } = JSON.parse(called.text) as { result: McpToolReply };
+        assert.deepEqual(JSON.parse(result.content[0].text), params);
+    }
+    const params = { name: 'set_key_action', arguments: { keymap: 'QWR', layer: 'base', moduleId: 0, keyId: 'x', action: 'none' } };
+    const rejected = await httpRequest({ port, body: { ...toolCall, params } });
+    assert.equal((JSON.parse(rejected.text) as { result: McpToolReply }).result.isError, true);
 });

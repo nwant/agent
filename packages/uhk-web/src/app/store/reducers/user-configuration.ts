@@ -103,6 +103,8 @@ export interface State {
     copiedLayerOrigin?: CopiedLayerOrigin;
     /** Serialized copy of what the keyboard has, or undefined when Agent has not read it. */
     keyboardBaseline?: UserConfigurationJson;
+    /** Ids of unsaved-change entries that an AI client's proposed changes touched. Display only. */
+    aiTags: string[];
 }
 
 export const initialState: State = {
@@ -119,6 +121,7 @@ export const initialState: State = {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     theme: (window as any).getUhkTheme(),
     isCustomPresetTheLastLoadedPreset: false,
+    aiTags: [],
 };
 
 export function reducer(
@@ -191,13 +194,22 @@ export function reducer(
             };
         }
 
+        case UserConfig.ActionTypes.ApplyAiUserConfiguration:
         case UserConfig.ActionTypes.PreviewUserConfiguration:
         case UserConfig.ActionTypes.LoadResetUserConfiguration:
         case UserConfig.ActionTypes.LoadUserConfigSuccess: {
-            const userConfig = (action as UserConfig.LoadUserConfigSuccessAction).payload;
+            const isAiWrite = action.type === UserConfig.ActionTypes.ApplyAiUserConfiguration;
+            const userConfig = isAiWrite
+                ? (action as UserConfig.ApplyAiUserConfigurationAction).payload.userConfiguration
+                : (action as UserConfig.LoadUserConfigSuccessAction).payload;
             const newState = assignUserConfiguration(state, userConfig);
             newState.newerUserConfiguration = undefined;
-            newState.selectedKeymapAbbr = undefined;
+            if (isAiWrite) {
+                // Keymap edits depend on the selected keymap, so a proposed change keeps the user's selection.
+                newState.aiTags = (action as UserConfig.ApplyAiUserConfigurationAction).payload.aiTags;
+            } else {
+                newState.selectedKeymapAbbr = undefined;
+            }
             newState.layerOptions = calculateLayerOptions(newState);
 
             // If the secondary role strategy is simple, then always set the simple preset values.
@@ -333,6 +345,7 @@ export function reducer(
                 newPairedDevicesAdding: false,
                 newPairedDevices: [],
                 keyboardBaseline: (action as DeviceActions.SaveToKeyboardSuccessAction).payload,
+                aiTags: [],
             };
         }
 
@@ -340,6 +353,7 @@ export function reducer(
             return {
                 ...state,
                 keyboardBaseline: state.userConfiguration.toJsonObject(),
+                aiTags: [],
             };
         }
 
@@ -1467,6 +1481,7 @@ export const getNewPairedDevicesState = (state: State): BleAddingState => {
 };
 export const getUserConfiguration = (state: State): UserConfiguration => state.userConfiguration;
 export const getKeyboardBaseline = (state: State): UserConfigurationJson | undefined => state.keyboardBaseline;
+export const getAiTags = (state: State): string[] => state.aiTags;
 export const getKeymaps = (state: State): Keymap[] => state.userConfiguration.keymaps;
 export const getDefaultKeymap = (state: State): Keymap => state.userConfiguration.keymaps.find(keymap => keymap.isDefault);
 export const getHostConnections = (state: State): HostConnection[] => {

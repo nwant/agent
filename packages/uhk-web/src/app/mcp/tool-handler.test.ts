@@ -1,4 +1,4 @@
-import { Macro, TextMacroAction, CommandMacroAction, US_BASIC_SCANCODE_TEXTS, UHK_80_USER_CONFIG, UserConfiguration } from 'uhk-common';
+import { Keymap, Macro, TextMacroAction, CommandMacroAction, US_BASIC_SCANCODE_TEXTS, UHK_80_USER_CONFIG, UserConfiguration } from 'uhk-common';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { handleMcpTool, type McpDeviceInfo } from './tool-handler.js';
@@ -265,8 +265,9 @@ test('get_unsaved_changes lists an edited key with its label and both actions', 
         label: 'RShift',
         before,
         after: none,
+        aiTagged: false,
     }]);
-    assert.match((body as { summary: string }).summary, /^1 unsaved change\./);
+    assert.match((body as { summary: string }).summary, /^1 unsaved change, 0 AI-tagged\./);
 });
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -282,7 +283,7 @@ test('get_unsaved_changes lists an added macro without reporting keys whose macr
     });
     const { body } = read();
     assert.deepEqual(body.changes, [{
-        id: 'macro:AAA first', type: 'macro', name: 'AAA first', change: 'added', before: null, after: newMacro,
+        id: 'macro:AAA first', type: 'macro', name: 'AAA first', change: 'added', before: null, after: newMacro, aiTagged: false,
     }]);
 });
 
@@ -310,8 +311,8 @@ test('get_unsaved_changes lists changed and removed macros with both versions', 
     });
     const changes = read({}, true).body.changes;
     assert.deepEqual(changes, [
-        { id: 'macro:Go to UHK site in browser', type: 'macro', name: 'Go to UHK site in browser', change: 'changed', before: changedBefore, after: changedAfter },
-        { id: "macro:Type Silent Bob's address", type: 'macro', name: "Type Silent Bob's address", change: 'removed', before: removedBefore, after: null },
+        { id: 'macro:Go to UHK site in browser', type: 'macro', name: 'Go to UHK site in browser', change: 'changed', before: changedBefore, after: changedAfter, aiTagged: false },
+        { id: "macro:Type Silent Bob's address", type: 'macro', name: "Type Silent Bob's address", change: 'removed', before: removedBefore, after: null, aiTagged: false },
     ]);
 });
 
@@ -345,7 +346,7 @@ test('get_unsaved_changes reports a duplicated keymap as one added entry without
         json.keymaps.push({ ...structuredClone(json.keymaps[0]), abbreviation: 'NEW', name: 'New', isDefault: false });
     });
     assert.deepEqual(read().body.changes, [
-        { id: 'keymap:NEW', type: 'keymap', change: 'added', abbreviation: 'NEW', name: 'New' },
+        { id: 'keymap:NEW', type: 'keymap', change: 'added', abbreviation: 'NEW', name: 'New', aiTagged: false },
     ]);
 });
 
@@ -365,7 +366,7 @@ test('get_unsaved_changes reports a deleted keymap as one removed entry without 
         json.keymaps.splice(index, 1);
     });
     assert.deepEqual(read().body.changes, [
-        { id: `keymap:${abbreviation}`, type: 'keymap', change: 'removed', abbreviation, name },
+        { id: `keymap:${abbreviation}`, type: 'keymap', change: 'removed', abbreviation, name, aiTagged: false },
     ]);
 });
 
@@ -395,4 +396,191 @@ test('get_unsaved_changes names no macro for a key whose macro index is out of r
     baseKeys(baseline)[27] = { keyActionType: 'playMacro', macroIndex: 99, macroArguments: [] };
     const [entry] = read().body.changes;
     assert.equal(entry.before.macroName, null);
+});
+
+const connected: McpDeviceInfo = { connected: true, model: 'UHK 80', firmwareVersion: '18.0.5', halves: { left: true, right: true, merged: true } };
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function writeFixture(edit: (json: any) => void = () => {}) {
+    const json = structuredClone(UHK_80_USER_CONFIG);
+    edit(json);
+    const config = new UserConfiguration().fromJsonObject(json);
+    const baseline = config.toJsonObject();
+    const abbreviation: string = config.keymaps[0].abbreviation;
+    const setKey = (action: unknown, args: Record<string, unknown> = {}, state: Partial<Parameters<typeof handleMcpTool>[0]> = {}) => {
+        const before = JSON.stringify(config.toJsonObject());
+        const result = handleMcpTool({ ...baseState, config, baseline, info: connected, ...state }, {
+            name: 'set_key_action', arguments: { keymap: abbreviation, layer: 'base', moduleId: 0, keyId: 27, action, ...args },
+        });
+        assert.equal(JSON.stringify(config.toJsonObject()), before, 'the input configuration is not mutated');
+        return { result, body: result.isError ? result.content[0].text : JSON.parse(result.content[0].text) };
+    };
+    return { config, baseline, abbreviation, setKey };
+}
+
+const keystrokeA = { keyActionType: 'keystroke', type: 'basic', scancode: 4 };
+
+test('set_key_action returns the resulting action and a next configuration with only that key changed', () => {
+    const { abbreviation, baseline, setKey } = writeFixture();
+    const { result, body } = setKey(keystrokeA);
+    assert.ok(!result.isError);
+    assert.equal(body.keymap, abbreviation);
+    assert.equal(body.layer, 'base');
+    assert.equal(body.moduleId, 0);
+    assert.equal(body.keyId, 27);
+    assert.equal(body.label, 'RShift');
+    assert.equal(body.action.keyActionType, 'keystroke');
+    assert.equal(body.action.scancode, 4);
+    assert.deepEqual(body.errors, []);
+    assert.match(body.summary as string, /checks prove the configuration loads, not that it works/i);
+    assert.match(body.summary as string, /save to keyboard/i);
+    assert.match(body.summary as string, /press the key/i);
+    assert.ok(result.next);
+    const changes = handleMcpTool({ ...baseState, baseline, config: result.next.config }, { name: 'get_unsaved_changes' });
+    const entries = JSON.parse(changes.content[0].text).changes;
+    assert.deepEqual(entries.map(entry => entry.id), [`key:${abbreviation}/base/0/27`]);
+    assert.equal(entries[0].after.scancode, 4);
+    assert.equal(JSON.stringify(result.next).includes('content'), false, 'the next state is kept apart from the reply');
+});
+
+test('set_key_action with none clears the key', () => {
+    const { setKey } = writeFixture();
+    for (const action of ['none', { keyActionType: 'none' }]) {
+        const { result, body } = setKey(action);
+        assert.ok(!result.isError);
+        assert.equal(body.action.keyActionType, 'none');
+        assert.equal(result.next.config.keymaps[0].layers[0].modules.find(module => module.id === 0).keyActions[27].constructor.name, 'NoneAction');
+    }
+});
+
+test('set_key_action refuses a write that fails a structural check and leaves the configuration unchanged', () => {
+    const { setKey, abbreviation } = writeFixture();
+    for (const [action, args, message] of [
+        [keystrokeA, { keymap: 'missing' }, /Unknown keymap/],
+        [keystrokeA, { layer: 'missing' }, /Unknown layer/],
+        [keystrokeA, { moduleId: 99 }, /Unknown module/],
+        [keystrokeA, { keyId: 999 }, /Unknown key/],
+        [keystrokeA, { keyId: -1 }, /Unknown key/],
+        [keystrokeA, { keyId: 1.5 }, /Unknown key/],
+        [keystrokeA, { keyId: '27' }, /Unknown key/],
+        [null, {}, /serializer JSON shape/],
+        [[keystrokeA], {}, /serializer JSON shape/],
+        [{ keyActionType: 'playMacro', macroIndex: '0', macroArguments: [] }, {}, /Unknown macro/],
+        [{ keyActionType: 'playMacro', macroIndex: 0.5, macroArguments: [] }, {}, /Unknown macro/],
+        [{ keyActionType: 'playMacro', macroIndex: 99, macroArguments: [] }, {}, /Unknown macro/],
+        [{ keyActionType: 'switchKeymap', keymapAbbreviation: 'NOPE' }, {}, /Unknown keymap abbreviation/],
+        [{ keyActionType: 'teleport' }, {}, /not a valid key action/],
+        [{ keyActionType: 'keystroke', type: 'basic', scancode: 0 }, {}, /does nothing/],
+        ['clear', {}, /serializer JSON shape/],
+        [{ keyActionType: 'switchLayer', layer: 'nowhere', switchLayerMode: 'toggle' }, {}, /did not recognize the value of layer/],
+        [{ keyActionType: 'mouse', mouseAction: 'fly' }, {}, /did not recognize the value of mouseAction/],
+    ] as const) {
+        const { result } = setKey(action, args);
+        assert.equal(result.isError, true, `${JSON.stringify(action)} ${JSON.stringify(args)}`);
+        assert.match(result.content[0].text, message);
+        assert.equal(result.next, undefined);
+    }
+    assert.ok(abbreviation);
+});
+
+test('set_key_action reports a clear error when no keyboard is connected', () => {
+    const { setKey } = writeFixture();
+    const disconnected = { ...connected, connected: false, model: null, firmwareVersion: null };
+    const { result } = setKey(keystrokeA, {}, { info: disconnected });
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, /No keyboard is connected/);
+    assert.equal(result.next, undefined);
+    assert.match(setKey(keystrokeA, {}, { info: undefined }).result.content[0].text, /still loading/);
+});
+
+test('set_key_action accepts every action of the default configuration as get_layer returns it', () => {
+    const { config, abbreviation, setKey } = writeFixture();
+    for (const layer of ['base', 'fn', 'mod', 'mouse']) {
+        const read = handleMcpTool({ ...baseState, config }, { name: 'get_layer', arguments: { keymap: abbreviation, layer } });
+        for (const { moduleId, keyId, action } of JSON.parse(read.content[0].text).keys) {
+            const { result, body } = setKey(action, { layer, moduleId, keyId });
+            assert.ok(!result.isError, `${layer}/${moduleId}/${keyId}: ${JSON.stringify(body)}`);
+            assert.deepEqual(body.action, action);
+        }
+    }
+});
+
+test('set_key_action tags the changed key and get_unsaved_changes shows the tags and their count', () => {
+    const { abbreviation, baseline, setKey } = writeFixture();
+    const earlier = 'macro:Earlier AI macro';
+    const { result } = setKey(keystrokeA, {}, { aiTags: [earlier] });
+    const keyId = `key:${abbreviation}/base/0/27`;
+    assert.deepEqual(result.next.aiTags, [earlier, keyId]);
+    assert.deepEqual(setKey(keystrokeA, {}, { aiTags: [keyId] }).result.next.aiTags, [keyId], 'a tag is listed once');
+
+    const config = result.next.config;
+    config.mouseMoveInitialSpeed += 1;
+    const reply = handleMcpTool({ ...baseState, baseline, config, aiTags: result.next.aiTags }, { name: 'get_unsaved_changes' });
+    const body = JSON.parse(reply.content[0].text);
+    assert.deepEqual(body.changes.map(({ id, aiTagged }) => ({ id, aiTagged })), [
+        { id: keyId, aiTagged: true },
+        { id: 'other:mouseMoveInitialSpeed', aiTagged: false },
+    ]);
+    assert.match(body.summary as string, /^2 unsaved changes, 1 AI-tagged\./);
+});
+
+test('set_key_action replies, successful or refused, do not disclose a hidden text action', () => {
+    const secret = 'hunter2-🔑';
+    const { setKey } = writeFixture(json => {
+        json.macros[0].macroActions = [{ macroActionType: 'text', text: secret }];
+    });
+    for (const action of [{ keyActionType: 'playMacro', macroIndex: 0, macroArguments: [] }, { keyActionType: 'playMacro', macroIndex: 99 }]) {
+        const { result } = setKey(action);
+        assert.equal(result.content[0].text.includes(secret), false);
+    }
+});
+
+test('set_key_action refuses a layer switch or secondary role to a layer the keymap does not have', () => {
+    const { setKey } = writeFixture(json => {
+        json.keymaps[0].layers = json.keymaps[0].layers.filter(layer => layer.id !== 'fn4');
+    });
+    for (const action of [
+        { keyActionType: 'switchLayer', layer: 'fn4', switchLayerMode: 'hold' },
+        { keyActionType: 'keystroke', type: 'basic', scancode: 4, secondaryRoleAction: 'fn4' },
+    ]) {
+        const { result } = setKey(action);
+        assert.equal(result.isError, true, JSON.stringify(action));
+        assert.match(result.content[0].text, /keymap has no fn4 layer/);
+    }
+});
+
+test('a key changed in a keymap that only Agent has tags that keymap entry', () => {
+    const { config, baseline } = writeFixture();
+    const added = config.clone();
+    const copy = new Keymap(added.keymaps[0]);
+    copy.abbreviation = 'NEW';
+    copy.name = 'New';
+    copy.isDefault = false;
+    added.keymaps.push(copy);
+    const state = { ...baseState, baseline, info: connected };
+    const { next } = handleMcpTool({ ...state, config: added }, {
+        name: 'set_key_action', arguments: { keymap: 'NEW', layer: 'base', moduleId: 0, keyId: 27, action: keystrokeA },
+    });
+    assert.deepEqual(next.aiTags, ['keymap:NEW']);
+    const body = JSON.parse(handleMcpTool({ ...state, config: next.config, aiTags: next.aiTags }, { name: 'get_unsaved_changes' }).content[0].text);
+    assert.deepEqual(body.changes.map(({ id, aiTagged }) => ({ id, aiTagged })), [{ id: 'keymap:NEW', aiTagged: true }]);
+});
+
+test('set_key_action keeps a key label and accepts a macro key with arguments', () => {
+    const { setKey } = writeFixture();
+    const labelled = setKey({ ...keystrokeA, label: 'Mail' });
+    assert.ok(!labelled.result.isError);
+    assert.equal(labelled.body.action.label, 'Mail');
+    const macro = { keyActionType: 'playMacro', macroIndex: 0, macroArguments: [] };
+    const played = setKey(macro);
+    assert.ok(!played.result.isError, JSON.stringify(played.body));
+    assert.equal(played.body.action.macroIndex, 0);
+});
+
+test('an unexpected failure during a write says nothing was changed', () => {
+    const { setKey } = writeFixture();
+    const { result } = setKey(keystrokeA, {}, { keyLabel: () => { throw new Error('boom'); } });
+    assert.equal(result.isError, true);
+    assert.equal(result.content[0].text, 'Could not change the user configuration. Nothing was changed.');
+    assert.equal(result.next, undefined);
 });
