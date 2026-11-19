@@ -195,7 +195,7 @@ export class MainAppComponent implements OnDestroy {
 
                 const keymap = config.keymaps.find(keymap => keymap.abbreviation === change.keymap);
                 const title = formatMacroKeyAssignmentLabel({
-                    keymapName: keymap.name,
+                    keymapName: keymap?.name || change.keymap,
                     layerId: LayerName[change.layer as keyof typeof LayerName],
                     moduleId: change.moduleId,
                     keyId: change.keyId,
