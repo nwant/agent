@@ -20,7 +20,7 @@ import {
 } from 'uhk-common';
 
 import * as Device from '../actions/device';
-import { RecoveryDeviceReplyAction, UpdateFirmwareAction, UpdateFirmwareWithAction } from '../actions/device';
+import { RecoveryDeviceReplyAction } from '../actions/device';
 import * as App from '../actions/app';
 import { FirmwareUpgradeState, ModuleFirmwareUpgradeState, ModuleFirmwareUpgradeStates } from '../../models';
 import { XtermCssClass, XtermLog } from '../../models/xterm-log';
@@ -198,33 +198,28 @@ export function reducer(state = initialState, action: Action): State {
             };
         }
 
-        case Device.ActionTypes.UpdateFirmware:
+        case Device.ActionTypes.ConfigurationWriteStarted: {
+            const { request } = (action as Device.ConfigurationWriteStartedAction).payload;
+            if (request.type === Device.ActionTypes.SaveConfiguration) {
+                return state;
+            }
+            if (request.type === Device.ActionTypes.RecoveryDevice) {
+                return startRecovery(state);
+            }
+            const upgradeState = request.type === Device.ActionTypes.UpdateFirmwareWith
+                ? (request.payload.forceUpgrade ? FirmwareUpgradeStates.ForceUpdateStartedWith : FirmwareUpgradeStates.StartedWith)
+                : (request.payload ? FirmwareUpgradeStates.ForceUpdateStarted : FirmwareUpgradeStates.Started);
             return {
                 ...state,
                 connectPrompt: undefined,
                 log: [{ message: 'Start flashing firmware', cssClass: XtermCssClass.standard }],
-                upgradeState: (action as UpdateFirmwareAction).payload
-                    ? FirmwareUpgradeStates.ForceUpdateStarted
-                    : FirmwareUpgradeStates.Started,
+                upgradeState,
                 upgradedModule: false,
                 showForceFirmwareUpgrade: false,
                 showForceFirmwareUpgradeWith: false,
                 failReason: undefined
             };
-
-        case Device.ActionTypes.UpdateFirmwareWith:
-            return {
-                ...state,
-                connectPrompt: undefined,
-                log: [{ message: 'Start flashing firmware', cssClass: XtermCssClass.standard }],
-                upgradeState: (action as UpdateFirmwareWithAction).payload.forceUpgrade
-                    ? FirmwareUpgradeStates.ForceUpdateStartedWith
-                    : FirmwareUpgradeStates.StartedWith,
-                upgradedModule: false,
-                showForceFirmwareUpgrade: false,
-                showForceFirmwareUpgradeWith: false,
-                failReason: undefined
-            };
+        }
 
         case Device.ActionTypes.UpdateFirmwareSuccess:
             return {
@@ -316,14 +311,7 @@ export function reducer(state = initialState, action: Action): State {
         }
 
         case Device.ActionTypes.RecoveryModule:
-        case Device.ActionTypes.RecoveryDevice: {
-            return {
-                ...state,
-                upgradeState: FirmwareUpgradeStates.Recovering,
-                connectPrompt: undefined,
-                log: [{ message: '', cssClass: XtermCssClass.standard }]
-            };
-        }
+            return startRecovery(state);
 
         case Device.ActionTypes.RecoveryModuleReply: {
             const response = (action as RecoveryDeviceReplyAction).payload;
@@ -338,6 +326,15 @@ export function reducer(state = initialState, action: Action): State {
         default:
             return state;
     }
+}
+
+function startRecovery(state: State): State {
+    return {
+        ...state,
+        upgradeState: FirmwareUpgradeStates.Recovering,
+        connectPrompt: undefined,
+        log: [{ message: '', cssClass: XtermCssClass.standard }],
+    };
 }
 
 export const xtermLog = (state: State) => state.log;

@@ -22,10 +22,8 @@ import {
     ModuleFirmwareUpgradeSkipInfo,
     RecoveryDeviceInfo,
     SaveUserConfigurationData,
-    UHK_DEVICE_IDS_TYPE,
     UpdateFirmwareData,
     UploadFileData,
-    UserConfiguration,
     UserConfigHistory,
     ZephyrLogEntry,
 } from 'uhk-common';
@@ -158,11 +156,8 @@ export class DeviceRendererService {
         this.ipcRenderer.send(IpcEvents.device.startConnectionPoller);
     }
 
-    recoveryDevice(userConfig: UserConfiguration, deviceId: UHK_DEVICE_IDS_TYPE): void {
-        this.ipcRenderer.send(IpcEvents.device.recoveryDevice, {
-            deviceId,
-            userConfig: userConfig.toJsonObject()
-        } as RecoveryDeviceInfo);
+    recoveryDevice(data: RecoveryDeviceInfo): void {
+        this.ipcRenderer.send(IpcEvents.device.recoveryDevice, data);
     }
 
     recoveryModule(moduleId: number): void {

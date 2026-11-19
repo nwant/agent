@@ -18,8 +18,9 @@ export const initialState: State = {
 export function reducer(state = initialState, action: Action): State {
     switch (action.type) {
 
-        case Device.ActionTypes.SaveConfiguration: {
-            if (state.operation === DongleOperations.None) {
+        case Device.ActionTypes.ConfigurationWriteStarted: {
+            const { request } = (action as Device.ConfigurationWriteStartedAction).payload;
+            if (request.type !== Device.ActionTypes.SaveConfiguration || state.operation === DongleOperations.None) {
                 return state;
             }
 

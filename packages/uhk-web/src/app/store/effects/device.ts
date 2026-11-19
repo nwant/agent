@@ -3,6 +3,7 @@ import { Router } from '@angular/router';
 import { Actions, createEffect, ofType } from '@ngrx/effects';
 import { ROUTER_NAVIGATED, ROUTER_NAVIGATION, RouterNavigatedAction} from '@ngrx/router-store';
 import { Action, Store } from '@ngrx/store';
+import { isEqual } from 'lodash';
 import { EMPTY, of, timer } from 'rxjs';
 import { distinctUntilChanged, map, mergeMap, pairwise, switchMap, tap, withLatestFrom } from 'rxjs/operators';
 
@@ -19,7 +20,7 @@ import {
     UHK_60_DEVICE,
     UHK_60_V2_DEVICE,
     UHK_80_DEVICE,
-    UserConfiguration
+    UHK_DEVICE_IDS,
 } from 'uhk-common';
 
 import {
@@ -30,6 +31,8 @@ import {
     CheckAreHostConnectionsPairedAction,
     CheckAreHostConnectionsPairedReplyAction,
     ConnectionStateChangedAction,
+    ConfigurationWriteRequest,
+    ConfigurationWriteStartedAction,
     EnableUsbStackTestAction,
     EraseBleSettingReplyAction,
     ExecShellCommandOnDongleAction,
@@ -37,10 +40,8 @@ import {
     ExecShellCommandOnRightHalfAction,
     HideSaveToKeyboardButton,
     ReadConfigSizesAction,
-    RecoveryDeviceAction,
     RecoveryDeviceReplyAction,
     RecoveryModuleAction,
-    ResetUserConfigurationAction,
     RestoreUserConfigurationFromBackupSuccessAction,
     SaveConfigurationAction,
     SaveConfigurationReplyAction,
@@ -49,12 +50,10 @@ import {
     SetPrivilegeOnLinuxReplyAction,
     SkipFirmwareUpgradeAction,
     StartConnectionPollerAction,
-    UpdateFirmwareAction,
     UpdateFirmwareFailedAction,
     UpdateFirmwareNotSupportedAction,
     UpdateFirmwareReplyAction,
     UpdateFirmwareSuccessAction,
-    UpdateFirmwareWithAction
 } from '../actions/device';
 import {
     EmptyAction,
@@ -71,9 +70,13 @@ import {
     getConnectedDevice,
     getHardwareConfiguration,
     getHostConnections,
+    getKeyboardBaseline,
+    getMcpDeviceInfo,
     getRouterState,
     getShowFirmwareUpgradePanel,
-    getUserConfiguration
+    getUserConfiguration,
+    isUserConfigLoading,
+    runningInElectron,
 } from '../index';
 import {
     ActionTypes as UserConfigActions,
@@ -84,6 +87,7 @@ import {
 import { AppRendererService } from '../../services/app-renderer.service';
 import { DefaultUserConfigurationService } from '../../services/default-user-configuration.service';
 import { DeviceRendererService } from '../../services/device-renderer.service';
+import { getSaveConfirmationChanges, SaveConfirmationService } from '../../services/save-confirmation.service';
 import { DataStorageRepositoryService } from '../../services/datastorage-repository.service';
 import { RouterState } from '../router-util';
 import type { UserConfigurationJson } from '../../mcp/config-diff';
@@ -95,6 +99,7 @@ export class DeviceEffects {
     private readonly dataStorageRepository = inject(DataStorageRepositoryService);
     private readonly defaultUserConfigurationService = inject(DefaultUserConfigurationService);
     private readonly deviceRendererService = inject(DeviceRendererService);
+    private readonly saveConfirmation = inject(SaveConfirmationService);
     private readonly router = inject(Router);
     private readonly store = inject<Store<AppState>>(Store);
     // Serialized configurations of saves in flight, oldest first. Each becomes the keyboard baseline when its save succeeds.
@@ -346,24 +351,27 @@ export class DeviceEffects {
         )
     );
 
-    saveConfiguration$ = createEffect(() => this.actions$
+    approveConfigurationWrite$ = createEffect(() => this.actions$
         .pipe(
-            ofType<SaveConfigurationAction>(ActionTypes.SaveConfiguration),
+            ofType<ConfigurationWriteRequest>(
+                ActionTypes.SaveConfiguration, ActionTypes.UpdateFirmware, ActionTypes.UpdateFirmwareWith, ActionTypes.RecoveryDevice,
+            ),
             withLatestFrom(this.store, this.store.select(getShowFirmwareUpgradePanel)),
-            mergeMap(([action, state, shouldUpgradeFirmware]) => {
-                if (shouldUpgradeFirmware) {
+            mergeMap(([request, state, shouldUpgradeFirmware]) => {
+                const isSave = request.type === ActionTypes.SaveConfiguration;
+                const userConfig = getUserConfiguration(state);
+                if (isSave && shouldUpgradeFirmware) {
                     this.router.navigate(['/update-firmware']);
                     return [new SaveToKeyboardSuccessFailed()];
                 }
 
-                if (state.userConfiguration.userConfiguration.hostConnections.length > HOST_CONNECTION_COUNT_MAX) {
+                if (isSave && userConfig.hostConnections.length > HOST_CONNECTION_COUNT_MAX) {
                     this.router.navigate(['/device/host-connections']);
                     return [new SaveToKeyboardSuccessFailed()];
                 }
 
-                const userConfig = state.userConfiguration.userConfiguration;
                 const firmwareUserConfigVersion = state.device.modules.rightModuleInfo?.userConfigVersion;
-                if (isUserConfigVersionHigherThanFirmware(userConfig.getSemanticVersion(), firmwareUserConfigVersion)) {
+                if (isSave && isUserConfigVersionHigherThanFirmware(userConfig.getSemanticVersion(), firmwareUserConfigVersion)) {
                     return [
                         new ShowNotificationAction({
                             type: NotificationType.Error,
@@ -373,16 +381,66 @@ export class DeviceEffects {
                     ];
                 }
 
-                setTimeout(() => this.sendUserConfigToKeyboard(
-                    userConfig,
-                    state.app.hardwareConfig,
-                    action.payload),
-                100);
+                const hardwareConfig = getHardwareConfiguration(state);
+                const configuration: UserConfigurationJson = userConfig.toJsonObject();
+                const startWrite = new ConfigurationWriteStartedAction({ request, configuration, hardwareConfig });
+                const writesUserConfig = request.type !== ActionTypes.RecoveryDevice
+                    || (request.payload !== UHK_DEVICE_IDS.UHK80_LEFT && request.payload !== UHK_DEVICE_IDS.UHK_DONGLE);
+                if (!runningInElectron(state) || !writesUserConfig) {
+                    return of(startWrite);
+                }
 
-                return EMPTY;
+                const baseline = getKeyboardBaseline(state);
+                const changes = getSaveConfirmationChanges(baseline, configuration);
+                const stillCurrent$ = this.store.pipe(map(current =>
+                    getConnectedDevice(current)?.id === getConnectedDevice(state)?.id
+                    && getHardwareConfiguration(current) === hardwareConfig
+                    && getKeyboardBaseline(current) === baseline
+                    && !isUserConfigLoading(current)
+                    && (!isSave || Boolean(getMcpDeviceInfo(current)?.connected))
+                    && isEqual(getUserConfiguration(current).toJsonObject(), configuration),
+                ));
+
+                return this.saveConfirmation.authorize(changes, stillCurrent$).pipe(mergeMap(approval => {
+                    if (approval === 'approved') {
+                        return [startWrite];
+                    }
+                    const actions: Action[] = isSave ? [new SaveToKeyboardSuccessFailed()] : [];
+                    if (approval === 'reviewRequired') {
+                        actions.push(new ShowNotificationAction({
+                            type: NotificationType.Warning,
+                            message: 'Review the unsaved changes in Agent before saving to the keyboard.',
+                        }));
+                    }
+                    return actions;
+                }));
             })
         )
     );
+
+    writeConfiguration$ = createEffect(() => this.actions$.pipe(
+        ofType<ConfigurationWriteStartedAction>(ActionTypes.ConfigurationWriteStarted),
+        tap(({ payload: { request, configuration, hardwareConfig } }) => {
+            switch (request.type) {
+                case ActionTypes.SaveConfiguration:
+                    setTimeout(() => this.sendUserConfigToKeyboard(configuration, hardwareConfig, request.payload), 100);
+                    break;
+                case ActionTypes.UpdateFirmware:
+                    this.deviceRendererService.updateFirmware({ userConfig: configuration, forceUpgrade: request.payload });
+                    break;
+                case ActionTypes.UpdateFirmwareWith:
+                    this.deviceRendererService.updateFirmware({
+                        userConfig: configuration,
+                        forceUpgrade: request.payload.forceUpgrade,
+                        uploadFile: request.payload.uploadFileData,
+                    });
+                    break;
+                case ActionTypes.RecoveryDevice:
+                    this.deviceRendererService.recoveryDevice({ userConfig: configuration, deviceId: request.payload });
+                    break;
+            }
+        }),
+    ), { dispatch: false });
 
     saveConfigurationReply$ = createEffect(() => this.actions$
         .pipe(
@@ -478,31 +536,6 @@ export class DeviceEffects {
         )
     );
 
-    updateFirmware$ = createEffect(() => this.actions$
-        .pipe(
-            ofType<UpdateFirmwareAction>(ActionTypes.UpdateFirmware),
-            withLatestFrom(this.store.select(getUserConfiguration)),
-            tap(([action, userConfig]) => this.deviceRendererService.updateFirmware({
-                userConfig: userConfig.toJsonObject(),
-                forceUpgrade: action.payload,
-            }))
-        ),
-    { dispatch: false }
-    );
-
-    updateFirmwareWith$ = createEffect(() => this.actions$
-        .pipe(
-            ofType<UpdateFirmwareWithAction>(ActionTypes.UpdateFirmwareWith),
-            withLatestFrom(this.store.select(getUserConfiguration)),
-            tap(([action, userConfig]) => this.deviceRendererService.updateFirmware({
-                userConfig: userConfig.toJsonObject(),
-                forceUpgrade: action.payload.forceUpgrade,
-                uploadFile: action.payload.uploadFileData
-            }))
-        ),
-    { dispatch: false }
-    );
-
     updateFirmwareReply$ = createEffect(() => this.actions$
         .pipe(
             ofType<UpdateFirmwareReplyAction>(ActionTypes.UpdateFirmwareReply),
@@ -529,18 +562,9 @@ export class DeviceEffects {
 
     restoreUserConfiguration$ = createEffect(() => this.actions$
         .pipe(
-            ofType<ResetUserConfigurationAction>(ActionTypes.RestoreConfigurationFromBackup),
+            ofType(ActionTypes.RestoreConfigurationFromBackup),
             map(() => new SaveConfigurationAction(true))
         )
-    );
-
-    recoveryDevice$ = createEffect(() => this.actions$
-        .pipe(
-            ofType<RecoveryDeviceAction>(ActionTypes.RecoveryDevice),
-            withLatestFrom(this.store.select(getUserConfiguration)),
-            tap(([action, userConfig]) => this.deviceRendererService.recoveryDevice(userConfig, action.payload))
-        ),
-    { dispatch: false }
     );
 
     recoveryDeviceReply$ = createEffect(() => this.actions$
@@ -616,11 +640,10 @@ export class DeviceEffects {
     );
 
     private sendUserConfigToKeyboard(
-        userConfiguration: UserConfiguration,
+        configuration: UserConfigurationJson,
         hardwareConfig: HardwareConfiguration,
         saveInHistory: boolean): void {
-        const configuration = userConfiguration.toJsonObject();
-        this.sentConfigurations.push(configuration as UserConfigurationJson);
+        this.sentConfigurations.push(configuration);
         this.deviceRendererService.saveUserConfiguration({
             saveInHistory,
             deviceId: hardwareConfig && hardwareConfig.deviceId,

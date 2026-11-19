@@ -7,6 +7,6 @@ export interface SaveUserConfigurationData {
      * The unique identifier of the UHK keyboard.
      */
     uniqueId: number;
-    configuration: string;
+    configuration: object;
     saveInHistory: boolean;
 }

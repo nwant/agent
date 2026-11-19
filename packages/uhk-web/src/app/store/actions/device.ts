@@ -11,6 +11,7 @@ import {
     FirmwareUpgradeConnectPrompt,
     FirmwareUpgradeFailReason,
     FirmwareUpgradeIpcResponse,
+    HardwareConfiguration,
     HardwareModules,
     IpcResponse,
     KeyboardLayout,
@@ -40,6 +41,7 @@ export enum ActionTypes {
     SetPrivilegeOnLinuxReply = '[device] set privilege on linux reply',
     ConnectionStateChanged = '[device] connection state changed',
     SaveConfiguration = '[device] save configuration',
+    ConfigurationWriteStarted = '[device] configuration write started',
     SaveConfigurationProgressChanged = '[device] save configuration progress changed',
     SaveConfigurationReply = '[device] save configuration reply',
     SavingConfiguration = '[device] saving configuration', // TODO: Delete looks like not used
@@ -158,7 +160,7 @@ export class ConnectionStateChangedAction implements Action {
 }
 
 export class SaveConfigurationAction implements Action {
-    type = ActionTypes.SaveConfiguration;
+    readonly type = ActionTypes.SaveConfiguration;
 
     /**
      * @param payload - if true then save user configuration in the history
@@ -235,7 +237,7 @@ export class FirmwareUpgradeConnectPromptAction implements Action {
 }
 
 export class UpdateFirmwareAction implements Action {
-    type = ActionTypes.UpdateFirmware;
+    readonly type = ActionTypes.UpdateFirmware;
 
     constructor(public payload: boolean) {
     }
@@ -249,7 +251,7 @@ export class UpdateFirmwareJsonAction implements Action {
 }
 
 export class UpdateFirmwareWithAction implements Action {
-    type = ActionTypes.UpdateFirmwareWith;
+    readonly type = ActionTypes.UpdateFirmwareWith;
 
     constructor(public payload: UpdateFirmwareWithPayload) {
     }
@@ -314,9 +316,21 @@ export class RestoreUserConfigurationFromBackupSuccessAction implements Action {
 }
 
 export class RecoveryDeviceAction implements Action {
-    type = ActionTypes.RecoveryDevice;
+    readonly type = ActionTypes.RecoveryDevice;
 
     constructor(public payload: UHK_DEVICE_IDS_TYPE) {}
+}
+
+export type ConfigurationWriteRequest = SaveConfigurationAction | UpdateFirmwareAction | UpdateFirmwareWithAction | RecoveryDeviceAction;
+
+export class ConfigurationWriteStartedAction implements Action {
+    type = ActionTypes.ConfigurationWriteStarted;
+
+    constructor(public payload: {
+        request: ConfigurationWriteRequest;
+        configuration: UserConfigurationJson;
+        hardwareConfig: HardwareConfiguration;
+    }) {}
 }
 
 export class RecoveryDeviceReplyAction implements Action {
@@ -389,6 +403,7 @@ export type Actions
     | ConnectionStateChangedAction
     | ShowSaveToKeyboardButtonAction
     | SaveConfigurationAction
+    | ConfigurationWriteStartedAction
     | SaveConfigurationProgressChangedAction
     | SaveConfigurationReplyAction
     | SaveToKeyboardSuccessAction

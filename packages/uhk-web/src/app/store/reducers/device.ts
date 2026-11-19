@@ -223,9 +223,11 @@ export function reducer(state = initialState, action: Action): State {
             };
         }
 
-        case Device.ActionTypes.SaveConfiguration: {
-            if (state.skipFirmwareUpgrade)
+        case Device.ActionTypes.ConfigurationWriteStarted: {
+            const { request } = (action as Device.ConfigurationWriteStartedAction).payload;
+            if (request.type !== Device.ActionTypes.SaveConfiguration || state.skipFirmwareUpgrade) {
                 return state;
+            }
 
             return {
                 ...state,
@@ -271,6 +273,7 @@ export function reducer(state = initialState, action: Action): State {
         case Device.ActionTypes.SaveToKeyboardFailed: {
             return {
                 ...state,
+                restoringUserConfiguration: false,
                 modifiedConfigWhileSaved: false,
                 saveToKeyboard: getSaveToKeyboardButtonState()
             };
