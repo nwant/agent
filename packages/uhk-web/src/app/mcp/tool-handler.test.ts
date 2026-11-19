@@ -269,6 +269,7 @@ test('get_unsaved_changes lists an edited key with its label and both actions', 
         before,
         after: none,
         aiTagged: false,
+        riskFlags: [],
     }]);
     assert.match((body as { summary: string }).summary, /^1 unsaved change, 0 AI-tagged\./);
 });
@@ -286,7 +287,7 @@ test('get_unsaved_changes lists an added macro without reporting keys whose macr
     });
     const { body } = read();
     assert.deepEqual(body.changes, [{
-        id: 'macro:AAA first', type: 'macro', name: 'AAA first', change: 'added', before: null, after: newMacro, aiTagged: false,
+        id: 'macro:AAA first', type: 'macro', name: 'AAA first', change: 'added', before: null, after: newMacro, aiTagged: false, riskFlags: [],
     }]);
 });
 
@@ -314,8 +315,8 @@ test('get_unsaved_changes lists changed and removed macros with both versions', 
     });
     const changes = read({}, true).body.changes;
     assert.deepEqual(changes, [
-        { id: 'macro:Go to UHK site in browser', type: 'macro', name: 'Go to UHK site in browser', change: 'changed', before: changedBefore, after: changedAfter, aiTagged: false },
-        { id: "macro:Type Silent Bob's address", type: 'macro', name: "Type Silent Bob's address", change: 'removed', before: removedBefore, after: null, aiTagged: false },
+        { id: 'macro:Go to UHK site in browser', type: 'macro', name: 'Go to UHK site in browser', change: 'changed', before: changedBefore, after: changedAfter, aiTagged: false, riskFlags: ['typesIntoHost'] },
+        { id: "macro:Type Silent Bob's address", type: 'macro', name: "Type Silent Bob's address", change: 'removed', before: removedBefore, after: null, aiTagged: false, riskFlags: [] },
     ]);
 });
 
@@ -349,7 +350,7 @@ test('get_unsaved_changes reports a duplicated keymap as one added entry without
         json.keymaps.push({ ...structuredClone(json.keymaps[0]), abbreviation: 'NEW', name: 'New', isDefault: false });
     });
     assert.deepEqual(read().body.changes, [
-        { id: 'keymap:NEW', type: 'keymap', change: 'added', abbreviation: 'NEW', name: 'New', aiTagged: false },
+        { id: 'keymap:NEW', type: 'keymap', change: 'added', abbreviation: 'NEW', name: 'New', aiTagged: false, riskFlags: ['changesKeyboard'] },
     ]);
 });
 
@@ -369,7 +370,7 @@ test('get_unsaved_changes reports a deleted keymap as one removed entry without 
         json.keymaps.splice(index, 1);
     });
     assert.deepEqual(read().body.changes, [
-        { id: `keymap:${abbreviation}`, type: 'keymap', change: 'removed', abbreviation, name, aiTagged: false },
+        { id: `keymap:${abbreviation}`, type: 'keymap', change: 'removed', abbreviation, name, aiTagged: false, riskFlags: ['changesKeyboard'] },
     ]);
 });
 
@@ -605,6 +606,175 @@ function assertMacroWriteReply(reply: unknown) {
     assert.match(body.summary, /press the key/i);
 }
 
+test('creating an event macro flags both the write and its unsaved entry regardless of supplied flags', () => {
+    const { config, baseline } = writeFixture();
+    const state = { ...baseState, config, baseline, info: connected };
+    const { result, body } = callMacroTool(state, 'create_macro', {
+        name: '$onInit', macroActions: [{ macroActionType: 'delay', delay: 10 }], riskFlags: [],
+    });
+    assert.equal(result.isError, false, result.content[0].text);
+    assert.deepEqual(body.riskFlags, ['runsWithoutKeyPress']);
+
+    const reply = handleMcpTool({ ...state, ...result.next }, { name: 'get_unsaved_changes' });
+    const [entry] = JSON.parse(reply.content[0].text).changes;
+    assert.equal(entry.aiTagged, true);
+    assert.deepEqual(entry.riskFlags, ['runsWithoutKeyPress']);
+});
+
+test('a text macro edited by hand is flagged while its text remains hidden', () => {
+    const { read } = unsavedFixture(json => {
+        json.macros.push({
+            ...newMacro, macroActions: [{ macroActionType: 'text', text: 'fixture' }],
+        });
+    });
+    const [entry] = read().body.changes;
+    assert.equal(entry.aiTagged, false);
+    assert.deepEqual(entry.riskFlags, ['typesIntoHost']);
+    assert.equal(entry.after.macroActions[0].text, '[text macro, 7 characters, hidden]');
+});
+
+test('a launcher chord is flagged in a key write', () => {
+    const { setKey } = writeFixture();
+    const { result, body } = setKey({ keyActionType: 'keystroke', type: 'basic', scancode: 21, modifierMask: 8 });
+    assert.equal(result.isError, false, result.content[0].text);
+    assert.deepEqual(body.riskFlags, ['opensLauncherOrShell']);
+});
+
+test('smart-macro launcher chords support command prefixes, sequences and modifier releases', () => {
+    const launcher = ['typesIntoHost', 'opensLauncherOrShell'];
+    for (const [command, expected] of [
+        ['launch: ifShift tapKey LG-space // launcher', launcher],
+        ['autoRepeat tapKey LG-space', launcher],
+        ['tapKeySeq pLG- space rLG-', launcher],
+        ['pressKey LG-\ntapKey space\nreleaseKey LG-', launcher],
+        ['tapKeySeq pLG- rLG- space', ['typesIntoHost']],
+        ['tapKeySeq rLG-space', []],
+        ['tapKeySeq space // LG-space', ['typesIntoHost']],
+        ['tapKey iLG-space', ['typesIntoHost']],
+        ['tapKey iLSRG-space', ['typesIntoHost']],
+        ['tapKey iLSoRG-space', launcher],
+    ] as const) {
+        const { read } = unsavedFixture(json => {
+            json.macros.push({ ...newMacro, macroActions: [{ macroActionType: 'command', command }] });
+        });
+        assert.deepEqual(read().body.changes[0].riskFlags, expected, command);
+    }
+});
+
+test('computed text and calls into other macros cannot be checked', () => {
+    for (const [command, riskFlags] of [
+        ['write "value: $macroArg.1"', ['typesIntoHost', 'cannotBeChecked']],
+        ['write \'Value: \'"$macroArg.1"', ['typesIntoHost', 'cannotBeChecked']],
+        ['&macroArg.1', ['cannotBeChecked']],
+        ['call Other macro', ['cannotBeChecked']],
+        ['exec Other macro', ['cannotBeChecked']],
+        ['fork Other macro', ['cannotBeChecked']],
+        ["write '$literal // call Other macro'", ['typesIntoHost']],
+        ['write "literal \\$dollar"\n// fork Other macro', ['typesIntoHost']],
+    ] as const) {
+        const { read } = unsavedFixture(json => {
+            json.macros.push({ ...newMacro, macroActions: [{ macroActionType: 'command', command }] });
+        });
+        assert.deepEqual(read().body.changes[0].riskFlags, riskFlags, command);
+    }
+});
+
+test('firmware settings changes and smart-macro configuration commands flag changes to the keyboard', () => {
+    const { read } = unsavedFixture(json => {
+        json.mouseMoveInitialSpeed += 1;
+        json.macros.push({
+            ...newMacro, macroActions: [{ macroActionType: 'command', command: 'set stickyModifiers never' }],
+        });
+    });
+    const { changes } = read().body;
+    assert.deepEqual(changes.map(entry => [entry.type, entry.riskFlags]), [
+        ['macro', ['changesKeyboard']],
+        ['other', ['changesKeyboard']],
+    ]);
+});
+
+test('a command that locks the keyboard flags both the keyboard change and the lockout', () => {
+    const { read } = unsavedFixture(json => {
+        json.macros.push({
+            ...newMacro, macroActions: [{ macroActionType: 'command', command: 'powerMode lock' }],
+        });
+    });
+    assert.deepEqual(read().body.changes[0].riskFlags, ['changesKeyboard', 'lockout']);
+});
+
+test('native macro keystrokes flag launcher chords even when a modifier is held by a separate action', () => {
+    const { read } = unsavedFixture(json => {
+        json.macros.push({
+            ...newMacro,
+            macroActions: [
+                { macroActionType: 'key', action: 'press', modifierMask: 128 },
+                { macroActionType: 'delay', delay: 20 },
+                { macroActionType: 'key', action: 'tap', type: 'basic', scancode: 44 },
+                { macroActionType: 'key', action: 'release', modifierMask: 128 },
+            ],
+        });
+    });
+    assert.deepEqual(read().body.changes[0].riskFlags, ['typesIntoHost', 'opensLauncherOrShell']);
+});
+
+test('a metadata-only keymap edit has no flags, while switching the default changes the keyboard', () => {
+    const { read } = unsavedFixture(json => {
+        json.keymaps[0].name = 'Renamed';
+        json.keymaps[1].isDefault = !json.keymaps[1].isDefault;
+    });
+    assert.deepEqual(read().body.changes.map(entry => entry.riskFlags), [[], ['changesKeyboard']]);
+});
+
+test('removing the last direct base-layer switch flags a possible lockout', () => {
+    for (const alternative of [false, true]) {
+        const { setKey } = writeFixture(json => {
+            const layer = json.keymaps[0].layers.find(layer => layer.id === 'base');
+            for (const module of layer.modules) {
+                module.keyActions = module.keyActions.map(action =>
+                    action.layer === 'fn' || action.secondaryRoleAction === 'fn' ? { keyActionType: 'none' } : action);
+            }
+            baseKeys(json)[27] = { keyActionType: 'switchLayer', layer: 'fn', switchLayerMode: 'hold' };
+            if (alternative) {
+                baseKeys(json)[28] = { ...keystrokeA, secondaryRoleAction: 'fn' };
+            }
+        });
+        const { result, body } = setKey('none');
+        assert.equal(result.isError, false, result.content[0].text);
+        assert.deepEqual(body.riskFlags, alternative ? ['changesKeyboard'] : ['changesKeyboard', 'lockout']);
+    }
+});
+
+test('assigning an existing macro flags its effects without including unrelated hand edits in the write', () => {
+    const { config, baseline, setKey } = writeFixture(json => {
+        json.macros.push({
+            ...newMacro, macroActions: [{ macroActionType: 'text', text: 'fixture' }],
+        });
+    });
+    const macroIndex = config.macros.findIndex(macro => macro.name === newMacro.name);
+    const edited = config.clone();
+    edited.mouseMoveInitialSpeed += 1;
+    const { result, body } = setKey({ keyActionType: 'playMacro', macroIndex, macroArguments: [] }, {}, { config: edited });
+    assert.equal(result.isError, false, result.content[0].text);
+    assert.deepEqual(body.riskFlags, ['typesIntoHost']);
+    const reply = handleMcpTool({ ...baseState, baseline, ...result.next }, { name: 'get_unsaved_changes' });
+    assert.deepEqual(JSON.parse(reply.content[0].text).changes.map(entry => [entry.type, entry.riskFlags]), [
+        ['keyAction', ['typesIntoHost']],
+        ['other', ['changesKeyboard']],
+    ]);
+});
+
+test('an added keymap carries a launcher flag for its keys without listing them separately', () => {
+    const { read } = unsavedFixture(json => {
+        const added = { ...structuredClone(json.keymaps[0]), abbreviation: 'NEW', name: 'New', isDefault: false };
+        baseKeys({ keymaps: [added] })[27] = { keyActionType: 'keystroke', type: 'basic', scancode: 44, modifierMask: 128 };
+        json.keymaps.push(added);
+    });
+    const { changes } = read().body;
+    assert.equal(changes.length, 1);
+    assert.equal(changes[0].id, 'keymap:NEW');
+    assert.ok(changes[0].riskFlags.includes('opensLauncherOrShell'));
+});
+
 test('create_macro adds a proposed change and preserves existing macro key assignments', () => {
     const { config, baseline, abbreviation } = writeFixture(json => {
         baseKeys(json)[27] = { keyActionType: 'playMacro', macroIndex: 0, macroArguments: [] };
@@ -754,8 +924,9 @@ test('rename_macro to the current name produces no diff or tags', () => {
     const { config, baseline } = writeFixture();
     const state = { ...baseState, config, baseline, info: connected };
     const { name } = config.macros[0];
-    const { result } = callMacroTool(state, 'rename_macro', { name, newName: ` ${name} ` });
+    const { result, body } = callMacroTool(state, 'rename_macro', { name, newName: ` ${name} ` });
     assert.equal(result.isError, false, result.content[0].text);
+    assert.deepEqual(body.riskFlags, []);
     assert.deepEqual(result.next.config.toJsonObject(), baseline);
     assert.deepEqual(result.next.aiTags, []);
 });

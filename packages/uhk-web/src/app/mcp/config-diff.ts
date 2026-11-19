@@ -1,16 +1,22 @@
-/**
- * The parts of the serializer's JSON shape (UserConfiguration.toJsonObject()) that the diff walks.
- */
+export type KeyActionJson = Record<string, unknown> | null;
+
+export interface MacroJson {
+    name: string;
+    macroActions: Array<Record<string, unknown>>;
+}
+
+/** The parts of the serializer's JSON shape (UserConfiguration.toJsonObject()) that the diff walks. */
 export interface UserConfigurationJson {
     keymaps: Array<{
         abbreviation: string;
         name: string;
+        isDefault: boolean;
         layers: Array<{
             id: string;
-            modules: Array<{ id: number; keyActions: Array<Record<string, unknown> | null> }>;
+            modules: Array<{ id: number; keyActions: KeyActionJson[] }>;
         }>;
     }>;
-    macros: Array<{ name: string }>;
+    macros: MacroJson[];
     [setting: string]: unknown;
 }
 
@@ -23,8 +29,8 @@ export interface KeyActionDiffEntry {
     layer: string;
     moduleId: number;
     keyId: number;
-    before: unknown;
-    after: unknown;
+    before: KeyActionJson;
+    after: KeyActionJson;
 }
 
 export interface KeymapDiffEntry {
@@ -40,8 +46,8 @@ export interface MacroDiffEntry {
     type: 'macro';
     name: string;
     change: 'added' | 'changed' | 'removed';
-    before: unknown;
-    after: unknown;
+    before: MacroJson | null;
+    after: MacroJson | null;
 }
 
 export interface OtherDiffEntry {
@@ -62,19 +68,19 @@ const SAVE_METADATA = new Set([
 const same = (first: unknown, second: unknown) => JSON.stringify(first) === JSON.stringify(second);
 
 // Macro indexes point into each side's own macro list, so compare and report the macro name instead.
-function resolveMacro(action: Record<string, unknown> | null, macros: UserConfigurationJson['macros']): unknown {
+function resolveMacro(action: KeyActionJson, macros: MacroJson[]): KeyActionJson {
     if (!action || typeof action.macroIndex !== 'number') {
         return action;
     }
     const { macroIndex, ...rest } = action;
-    return { ...rest, macroName: macros[macroIndex as number]?.name ?? null };
+    return { ...rest, macroName: macros[macroIndex]?.name ?? null };
 }
 
 interface KeyAt {
     layer: string;
     moduleId: number;
     keyId: number;
-    action: unknown;
+    action: KeyActionJson;
 }
 
 function keyActions(keymap: KeymapJson, macros: UserConfigurationJson['macros']): Map<string, KeyAt> {

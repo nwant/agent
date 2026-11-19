@@ -12,6 +12,7 @@ function configuration(scancode = 4): UserConfigurationJson {
         keymaps: [{
             abbreviation: 'QWR',
             name: 'QWERTY',
+            isDefault: true,
             layers: [{ id: 'base', modules: [{ id: 0, keyActions: [{ keyActionType: 'keystroke', scancode }] }] }],
         }],
         macros: [],

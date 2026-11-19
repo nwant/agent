@@ -3,7 +3,8 @@ import {
     type Keymap, type Layer, type MacroAction, type McpToolCall, type McpToolReply, type UserConfiguration,
 } from 'uhk-common';
 
-import { diffUserConfiguration, type UserConfigurationJson } from './config-diff.js';
+import type { ConfigDiffEntry, UserConfigurationJson } from './config-diff.js';
+import { diffUserConfigurationWithRiskFlags } from './risk-flags.js';
 import { generateMacroId, insertItemInNameOrder } from '../util/configuration-items.js';
 import { findMacroKeyAssignments } from '../util/find-macro-key-assignments.js';
 import { parseStatusBuffer } from '../util/status-buffer-parser.js';
@@ -134,7 +135,7 @@ function readTool(state: ToolState, call: McpToolCall): unknown {
                 throw new ToolError("Agent does not know the keyboard's configuration: it has not been read yet, or Agent could not use it. Connect the keyboard, or load its configuration in Agent, and try again.");
             }
             const aiTags = new Set(state.aiTags);
-            const changes = diffUserConfiguration(state.baseline, config.toJsonObject() as UserConfigurationJson).map(entry => ({
+            const changes = diffUserConfigurationWithRiskFlags(state.baseline, config.toJsonObject() as UserConfigurationJson).map(entry => ({
                 ...entry,
                 ...entry.type === 'keyAction' ? { label: state.keyLabel(entry.moduleId, entry.keyId) } : {},
                 aiTagged: aiTags.has(entry.id),
@@ -169,9 +170,8 @@ function serializeReply(value: unknown, revealTextMacros: boolean): string {
  * Ids of the unsaved-change entries a write changed, as get_unsaved_changes reports them: an edit inside a keymap
  * that the keyboard doesn't have belongs to that keymap's single entry.
  */
-function changedIds(state: ToolState, after: UserConfiguration): string[] {
-    const written = diffUserConfiguration(state.config.toJsonObject() as UserConfigurationJson, after.toJsonObject() as UserConfigurationJson);
-    const onKeyboard = state.baseline && new Set(state.baseline.keymaps.map(keymap => keymap.abbreviation));
+function changedIds(written: ConfigDiffEntry[], baseline: ToolState['baseline']): string[] {
+    const onKeyboard = baseline && new Set(baseline.keymaps.map(keymap => keymap.abbreviation));
     return written.map(entry => entry.type === 'keyAction' && onKeyboard && !onKeyboard.has(entry.keymap)
         ? `keymap:${entry.keymap}`
         : entry.id);
@@ -192,11 +192,14 @@ function finishWrite(state: ToolState, config: UserConfiguration, { value, summa
     } catch {
         throw new ToolError('The configuration would not serialize, so nothing was changed.');
     }
-    const aiTags = [...new Set([...(state.aiTags ?? []), ...changedIds(state, config)])];
+    const written = diffUserConfigurationWithRiskFlags(
+        state.config.toJsonObject() as UserConfigurationJson, config.toJsonObject() as UserConfigurationJson);
+    const aiTags = [...new Set([...(state.aiTags ?? []), ...changedIds(written, state.baseline)])];
     return {
         value: {
             ...value,
             errors: [],
+            riskFlags: [...new Set(written.flatMap(entry => entry.riskFlags))],
             summary: `${summary} in Agent's unsaved changes; nothing was written to the keyboard. ${KEY_PRESS_IS_THE_TEST}`,
         },
         next: { config, aiTags },

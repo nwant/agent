@@ -105,6 +105,7 @@ export class AgentMcpServer {
                 'List every difference between Agent and the keyboard, including the user\'s own edits: key actions, keymaps added or removed, macros and other settings.',
                 'Save to keyboard in Agent would send all of them.',
                 'aiTagged marks entries that an AI client\'s proposed changes touched.',
+                'Each entry includes Agent-computed riskFlags. An empty array means no rule matched.',
                 'Key actions name the macro they play instead of its index. Text actions are hidden unless enabled in Agent.',
             ].join(' '));
             registerTool('set_key_action', [
@@ -112,6 +113,7 @@ export class AgentMcpServer {
                 'Use a keymap abbreviation or unique name and a layer from list_keymaps, and a moduleId and keyId from get_layer.',
                 'action takes the serialized shape get_layer returns (playMacro uses macroIndex, the position in list_macros), or "none" to clear the key.',
                 'Agent refuses the change if the keymap, layer, key or macro does not exist or the configuration would not serialize.',
+                'Returns Agent-computed riskFlags for the change. An empty array means no rule matched.',
                 'Passing the checks proves the configuration loads, not that it works: the user must save and press the key.',
             ].join(' '), {
                 inputSchema: {
@@ -122,7 +124,7 @@ export class AgentMcpServer {
                     action: z.union([z.literal('none'), z.record(z.string(), z.unknown())]),
                 },
             });
-            const macroWriteNote = 'Proposes an unsaved change. The user reviews it and clicks Save to keyboard in Agent, then presses the assigned key to verify it works.';
+            const macroWriteNote = 'Proposes an unsaved change and returns Agent-computed riskFlags. An empty array means no rule matched. The user reviews it and clicks Save to keyboard in Agent, then presses the assigned key to verify it works.';
             const macroName = z.string();
             const macroActions = z.array(z.record(z.string(), z.unknown())).describe('Ordered actions in the serializer JSON shape returned by get_macro.');
             const macroFlags = { isLooped: z.boolean().optional(), isPrivate: z.boolean().optional() };
