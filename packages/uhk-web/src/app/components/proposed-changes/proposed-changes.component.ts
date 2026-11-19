@@ -6,7 +6,8 @@ import { take } from 'rxjs';
 import { KeystrokeType, LayerName, macroActionType, ModuleId, UHK_MODULES, type UserConfiguration } from 'uhk-common';
 
 import type { KeyActionJson, MacroJson, OtherDiffEntry } from '../../mcp/config-diff';
-import type { RiskFlag, UnsavedChange } from '../../mcp/risk-flags';
+import { RISK_FLAG_LABELS } from '../../mcp/risk-flag-labels';
+import type { UnsavedChange } from '../../mcp/risk-flags';
 import { MapperService } from '../../services/mapper.service';
 import {
     AppState, deviceState, getDefaultUserConfiguration, getMcpDeviceInfo, getUnsavedChanges, getUserConfiguration,
@@ -22,15 +23,6 @@ interface ChangeLocation {
     query?: { layer: LayerName; module?: number; key?: number };
     relatedLinks?: Array<{ label: string; route: string[] }>;
 }
-
-const RISK_LABELS: Record<RiskFlag, string> = {
-    runsWithoutKeyPress: 'Runs without a key press',
-    typesIntoHost: 'Types into the host',
-    opensLauncherOrShell: 'Opens a launcher or shell',
-    cannotBeChecked: 'Can’t be checked',
-    changesKeyboard: 'Changes the keyboard itself',
-    lockout: 'Lockout',
-};
 
 const canDiscardUnsavedChanges = createSelector(
     getMcpDeviceInfo, isUserConfigLoading, isUserConfigSaving, deviceState,
@@ -48,7 +40,7 @@ export class ProposedChangesComponent {
     private readonly store = inject<Store<AppState>>(Store);
     private readonly mapper = inject(MapperService);
 
-    readonly riskLabels = RISK_LABELS;
+    readonly riskLabels = RISK_FLAG_LABELS;
     readonly loading$ = this.store.select(isUserConfigLoading);
     readonly canDiscard$ = this.store.select(canDiscardUnsavedChanges);
 

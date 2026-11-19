@@ -87,6 +87,23 @@
         }
     </div>
 }
+<ng-template #saveConfirmation let-modal>
+    <div class="modal-header">
+        <h2 id="save-confirmation-title" class="modal-title fs-5">Confirm Save to keyboard</h2>
+    </div>
+    <div class="modal-body">
+        <p>Saving writes all unsaved changes to your keyboard, including:</p>
+        <ul class="mb-0">
+            @for (entry of saveConfirmationEntries; track entry.id) {
+                <li><strong>{{ entry.title }}</strong> · {{ entry.reasons.join(', ') }}</li>
+            }
+        </ul>
+    </div>
+    <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" ngbAutofocus (click)="modal.dismiss()">Cancel</button>
+        <button type="button" class="btn btn-primary" (click)="modal.close()">Save to keyboard</button>
+    </div>
+</ng-template>
 <out-of-space-warning *ngIf="outOfSpaceWarning.show"
                       [@showOutOfSpaceWarning]
                       [state]="outOfSpaceWarning"></out-of-space-warning>

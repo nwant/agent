@@ -2,14 +2,18 @@ import { Component, HostListener, OnDestroy, ChangeDetectorRef, TemplateRef, Vie
 import { ActivatedRoute, Event, NavigationEnd, Router } from '@angular/router';
 import { animate, style, transition, trigger } from '@angular/animations';
 import { faPuzzlePiece, faArrowUp } from '@fortawesome/free-solid-svg-icons';
+import { NgbModal, NgbModalRef } from '@ng-bootstrap/ng-bootstrap';
 import { Actions, ofType } from '@ngrx/effects';
 import { SplitGutterInteractionEvent } from 'angular-split';
 import { NotifierService } from 'gramli-angular-notifier';
-import { Observable, Subscription } from 'rxjs';
-import { Action, Store } from '@ngrx/store';
-import { ERR_UPDATER_INVALID_SIGNATURE, SharedConfigApplyData } from 'uhk-common';
+import { isEqual } from 'lodash';
+import { Observable, Subscription, take, withLatestFrom } from 'rxjs';
+import { Action, createSelector, Store } from '@ngrx/store';
+import { ERR_UPDATER_INVALID_SIGNATURE, LayerName, SharedConfigApplyData } from 'uhk-common';
 
+import { RISK_FLAG_LABELS } from './mcp/risk-flag-labels';
 import { KeyboardSvgExportService } from './services/keyboard-svg-export.service';
+import { MapperService } from './services/mapper.service';
 import { SharedConfigService } from './services/shared-config.service';
 import { ActionTypes as AppUpdateActionTypes } from './store/actions/app-update.action';
 import { DoNotUpdateAppAction, UpdateAppAction } from './store/actions/app-update.action';
@@ -32,6 +36,10 @@ import {
     getOutOfSpaceWaringData,
     getShowFirmwareUpgradePanel,
     getSharedConfigChange,
+    getDefaultUserConfiguration,
+    getMcpDeviceInfo,
+    getUnsavedChanges,
+    getUserConfiguration,
     showReviewChanges,
 } from './store';
 import { StartLeftHalfPairingAction } from './store/actions/advance-settings.action';
@@ -51,6 +59,13 @@ import {
 import { BleAddingState, DonglePairingState, HalvesPairingState, OutOfSpaceWarningData } from './models';
 import { filter } from 'rxjs/operators';
 import { SecondSideMenuContainerComponent } from './components/side-menu';
+import { formatMacroKeyAssignmentLabel } from './util/format-macro-key-assignment-label';
+
+interface SaveConfirmationEntry {
+    id: string;
+    title: string;
+    reasons: string[];
+}
 
 @Component({
     selector: 'main-app',
@@ -115,6 +130,7 @@ import { SecondSideMenuContainerComponent } from './components/side-menu';
 export class MainAppComponent implements OnDestroy {
     @ViewChild(SecondSideMenuContainerComponent) secondarySideMenuContainer: SecondSideMenuContainerComponent;
     @ViewChild('manuallyUpdateNotification', { static: true }) manuallyUpdateNotificationTmpl: TemplateRef<void>;
+    @ViewChild('saveConfirmation', { static: true }) saveConfirmationTemplate: TemplateRef<unknown>;
 
     donglePairingState: DonglePairingState;
     halvesPairingState: HalvesPairingState;
@@ -125,6 +141,7 @@ export class MainAppComponent implements OnDestroy {
     deviceConfigurationLoaded$: Observable<boolean>;
     runningInElectron$: Observable<boolean>;
     saveToKeyboardState: ProgressButtonState;
+    saveConfirmationEntries: SaveConfirmationEntry[] = [];
     firstAttemptOfSaveToKeyboard$: Observable<boolean>;
     isStatusBufferErrorHidden$: Observable<boolean>;
     outOfSpaceWarning: OutOfSpaceWarningData;
@@ -143,6 +160,9 @@ export class MainAppComponent implements OnDestroy {
     private newPairedDevicesStateSubscription: Subscription;
     private errorPanelHeightSubscription: Subscription;
     private readonly keyboardSvgExportService = inject(KeyboardSvgExportService);
+    private readonly mapper = inject(MapperService);
+    private readonly modal = inject(NgbModal);
+    private saveConfirmationModal?: NgbModalRef;
     private readonly sharedConfigService = inject(SharedConfigService);
     private keypressCapturing: boolean;
     private saveToKeyboardStateSubscription: Subscription;
@@ -156,6 +176,36 @@ export class MainAppComponent implements OnDestroy {
     private statusBufferSubscription: Subscription;
     private secondSideMenuComponent: unknown;
     private readonly store = inject<Store<AppState>>(Store);
+    private readonly saveConfirmation$ = this.store.select(createSelector(
+        getUnsavedChanges, getUserConfiguration, getDefaultUserConfiguration,
+        (changes = [], config, defaultUserConfiguration) => ({
+            changes,
+            entries: changes.flatMap<SaveConfirmationEntry>(change => {
+                const reasons = change.riskFlags
+                    .filter(flag => flag === 'runsWithoutKeyPress' || flag === 'opensLauncherOrShell')
+                    .map(flag => RISK_FLAG_LABELS[flag]);
+                if (!reasons.length) {
+                    return [];
+                }
+
+                if (change.type !== 'keyAction') {
+                    const title = change.type === 'other' ? change.path : change.name;
+                    return [{ id: change.id, title, reasons }];
+                }
+
+                const keymap = config.keymaps.find(keymap => keymap.abbreviation === change.keymap);
+                const title = formatMacroKeyAssignmentLabel({
+                    keymapName: keymap.name,
+                    layerId: LayerName[change.layer as keyof typeof LayerName],
+                    moduleId: change.moduleId,
+                    keyId: change.keyId,
+                    defaultUserConfiguration,
+                    mapper: this.mapper,
+                });
+                return [{ id: change.id, title, reasons }];
+            }),
+        }),
+    ));
     readonly showReviewChanges$ = this.store.select(showReviewChanges);
     private readonly route = inject(ActivatedRoute);
     private readonly router = inject(Router);
@@ -340,8 +390,39 @@ export class MainAppComponent implements OnDestroy {
         this.store.dispatch(new DoNotUpdateAppAction());
     }
 
-    clickedOnProgressButton(action: Action) {
-        return this.store.dispatch(action);
+    clickedOnProgressButton(action: Action): void {
+        if (this.saveConfirmationModal) {
+            return;
+        }
+
+        this.saveConfirmation$.pipe(take(1)).subscribe(({ changes, entries }) => {
+            if (!entries.length) {
+                this.store.dispatch(action);
+                return;
+            }
+
+            this.saveConfirmationEntries = entries;
+            const modal = this.modal.open(this.saveConfirmationTemplate, {
+                ariaLabelledBy: 'save-confirmation-title',
+                scrollable: true,
+            });
+            this.saveConfirmationModal = modal;
+            modal.hidden.subscribe(() => this.saveConfirmationModal = undefined);
+            modal.closed.pipe(
+                withLatestFrom(this.store.select(getUnsavedChanges), this.store.select(getMcpDeviceInfo)),
+            ).subscribe(([, currentChanges, device]) => {
+                if (!isEqual(currentChanges, changes) || !device?.connected || !this.saveToKeyboardState.showButton
+                    || this.saveToKeyboardState.action !== action) {
+                    this.notificationService.show({
+                        message: 'The unsaved changes or keyboard availability changed. Select Save to keyboard again.',
+                        type: 'info',
+                    });
+                    return;
+                }
+
+                this.store.dispatch(action);
+            });
+        });
     }
 
     enableUsbStackTest() {
