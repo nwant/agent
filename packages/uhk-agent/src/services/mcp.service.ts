@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { EventEmitter } from 'node:events';
 import type { BrowserWindow, IpcMain } from 'electron';
-import { ConfigureMcp, DEFAULT_MCP_SETTINGS, IpcEvents, isMcpPort, LogService, MCP_MAX_PORT, MCP_MIN_PORT, McpSettings, McpStatus } from 'uhk-common';
+import { ConfigureMcp, DEFAULT_MCP_SETTINGS, IpcEvents, isMcpPort, LogService, MCP_MAX_PORT, MCP_MIN_PORT, McpSettings, McpStatus, type FirmwareReferenceManual } from 'uhk-common';
 import { AgentMcpServer } from '../mcp/server';
 import { McpRendererBridge } from '../mcp/renderer-bridge';
 import { MainServiceBase } from './main-service-base';
@@ -14,7 +14,7 @@ function generateMcpToken(): string {
 
 interface McpServiceOptions {
     ipc: Pick<IpcMain, 'handle'> & EventEmitter;
-    readReferenceManual: () => Promise<string>;
+    readReferenceManual: () => Promise<FirmwareReferenceManual>;
     settings: {
         get(key: string): Promise<unknown>;
         set(key: string, value: McpSettings): Promise<void>;

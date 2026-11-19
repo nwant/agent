@@ -63,7 +63,7 @@ export class SmartMacroDocEffect {
     referenceManualUpdated$ = createEffect(() => this.actions$
         .pipe(
             ofType(ActionTypes.ReferenceManualChanged),
-            map((action: ReferenceManualChangedAction) => action.payload),
+            map((action: ReferenceManualChangedAction) => action.payload.text),
             distinctUntilChanged(),
             tap((referenceManual) => {
                 this.completionItemProvider.setReferenceManual(referenceManual);

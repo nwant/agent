@@ -3,7 +3,9 @@ import {
     type McpToolCall,
 } from 'uhk-common';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { readFirmwareCommands } from './firmware-commands.js';
 import { handleMcpTool, type McpDeviceInfo } from './tool-handler.js';
 
 import { getDefaultQwertyKeyLabel } from '../util/get-default-key-label.js';
@@ -605,6 +607,96 @@ function assertMacroWriteReply(reply: unknown) {
     assert.match(body.summary, /save to keyboard/i);
     assert.match(body.summary, /press the key/i);
 }
+
+const firmware = { firmwareGitRepo: 'UltimateHackingKeyboard/firmware', firmwareGitTag: 'v18.0.3' };
+const referenceManual = readFileSync(new URL('./fixtures/firmware-v18.0.3/reference-manual.md', import.meta.url), 'utf8');
+
+test('macro writes refuse a command missing from the connected firmware manual before changing the configuration', () => {
+    const { config, baseline } = writeFixture();
+    const state = { ...baseState, config, baseline, info: connected, firmware, commandManual: {
+        ...firmware, commands: readFirmwareCommands(referenceManual),
+    } };
+    for (const [tool, name, command] of [
+        ['create_macro', 'New macro', 'noSuchCommand 1'],
+        ['update_macro', config.macros[0].name, '// Comment\nretry: ifShift noSuchCommand 1'],
+        ['update_macro', config.macros[0].name, 'if ($battery.chargeLimit == 1) noSuchCommand'],
+        ['update_macro', config.macros[0].name, 'if $active noSuchCommand'],
+        ['update_macro', config.macros[0].name, 'while true noSuchCommand'],
+        ['update_macro', config.macros[0].name, 'ifLayer fn final noSuchCommand'],
+        ['update_macro', config.macros[0].name, "ifShortcut ' noSuchCommand // ' is a key ID here"],
+        ['update_macro', config.macros[0].name, 'final nested: noSuchCommand'],
+    ]) {
+        const { result, body } = callMacroTool(state, tool, {
+            name, macroActions: [{ macroActionType: 'command', command }],
+        });
+        assert.equal(result.isError, true, command);
+        assert.match(body, /noSuchCommand.*not in the reference manual.*connected firmware.*v18\.0\.3/);
+        assert.equal(result.next, undefined);
+    }
+
+    const command = [
+        'start: ifShift {',
+        '  //note: noSuchCommand',
+        '  ifShift // noSuchCommand',
+        '  notify "noSuchCommand // literal" // noSuchCommand',
+        '  ifShortcut a leftShift goTo start',
+        '  ifPrimary advancedStrategy ignoreTriggersFromSameHalf notify "Ready"',
+        '  final nested: notify "Ready"',
+        '  ifLayer misspelledLayer', // Firmware checks the layer argument.
+        '  set invalidSetting invalidValue',
+        '  final &macroArg.1',
+        '}',
+        'else {',
+        '  tapKey invalidScancode',
+        '}',
+    ].join('\n');
+    const { result, body } = callMacroTool(state, 'create_macro', {
+        name: 'New macro', macroActions: [{ macroActionType: 'command', command }],
+    });
+    assert.equal(result.isError, false, result.content[0].text);
+    assert.doesNotMatch(body.summary, /skipped/i);
+    assert.ok(result.next);
+});
+
+test('macro writes disclose a skipped command check when the renderer has no usable matching manual', () => {
+    const { config, baseline } = writeFixture();
+    const changedManual = referenceManual.replaceAll('COMMAND = ', 'INSTRUCTION = ');
+    const commands = readFirmwareCommands(referenceManual);
+    for (const commandManual of [
+        undefined,
+        { ...firmware, commands: readFirmwareCommands(changedManual) },
+        { ...firmware, firmwareGitTag: 'v18.0.2', commands },
+        { ...firmware, firmwareGitRepo: 'another/firmware', commands },
+    ]) {
+        const state = { ...baseState, config, baseline, info: connected, firmware, commandManual };
+        for (const [tool, name] of [['create_macro', 'New macro'], ['update_macro', config.macros[0].name]]) {
+            const { result, body } = callMacroTool(state, tool, {
+                name, macroActions: [{ macroActionType: 'command', command: 'noSuchCommand' }],
+            });
+            assert.equal(result.isError, false, result.content[0].text);
+            assert.match(body.summary, /command name check skipped.*reference manual.*connected firmware/i);
+            assert.ok(result.next);
+        }
+    }
+});
+
+test('macro writes without smart-macro source need no reference manual', () => {
+    const { config, baseline } = writeFixture(json => {
+        json.macros[0].macroActions = [{ macroActionType: 'command', command: 'legacyCommand' }];
+    });
+    const state = { ...baseState, config, baseline, info: connected, firmware,
+        get commandManual(): never { assert.fail('No supplied smart-macro command to check'); },
+    };
+    for (const [tool, args] of [
+        ['create_macro', { name: 'New macro', macroActions: [{ macroActionType: 'text', text: 'fixture' }] }],
+        ['update_macro', { name: config.macros[0].name, isPrivate: true }],
+    ] as const) {
+        const { result, body } = callMacroTool(state, tool, args);
+        assert.equal(result.isError, false, result.content[0].text);
+        assert.doesNotMatch(body.summary, /skipped/i);
+        assert.ok(result.next);
+    }
+});
 
 test('creating an event macro flags both the write and its unsaved entry regardless of supplied flags', () => {
     const { config, baseline } = writeFixture();

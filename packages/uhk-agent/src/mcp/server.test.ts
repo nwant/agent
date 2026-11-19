@@ -7,7 +7,8 @@ import { availablePort, httpRequest } from './test-http';
 const toolCall = { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_device_info', arguments: {} } };
 const manualUri = 'uhk://smart-macro/reference-manual';
 const manualRead = { jsonrpc: '2.0', id: 1, method: 'resources/read', params: { uri: manualUri } };
-const unexpectedManual = async (): Promise<string> => { throw new Error('Unexpected reference manual read'); };
+const manualCall = { ...toolCall, params: { name: 'get_reference_manual' } };
+const unexpectedManual = async (): Promise<never> => { throw new Error('Unexpected reference manual read'); };
 
 test('MCP advertises the smart-macro reference manual as Markdown', async context => {
     const port = await availablePort();
@@ -22,23 +23,38 @@ test('MCP advertises the smart-macro reference manual as Markdown', async contex
     assert.equal(resources[0].mimeType, 'text/markdown');
 });
 
-test('MCP reads the current reference manual and reports when it is unavailable', async context => {
+test('the manual resource and tool read the current firmware manual behind the MCP access gate', async context => {
     const port = await availablePort();
+    const repo = 'UltimateHackingKeyboard/firmware';
+    let firmwareGitTag = 'v18.0.3';
     let manual: string | Error = '# Reference manual for firmware A';
+    let reads = 0;
     const server = new AgentMcpServer(async () => { throw new Error('Unexpected renderer request'); }, async () => {
+        reads++;
         if (manual instanceof Error) {
             throw manual;
         }
-        return manual;
+        return { firmwareGitRepo: repo, firmwareGitTag, text: manual };
     });
     context.after(() => server.stop());
     await server.start({ port, token: 'test-token', enabled: true });
 
-    assert.equal((await httpRequest({ port, token: 'wrong', body: manualRead })).status, 401);
-    for (const text of ['# Reference manual for firmware A', '# Reference manual for firmware B']) {
+    for (const body of [manualRead, manualCall]) {
+        assert.equal((await httpRequest({ port, token: 'wrong', body })).status, 401);
+        assert.equal((await httpRequest({ port, headers: { Origin: 'https://example.com' }, body })).status, 403);
+    }
+    assert.equal(reads, 0);
+    const withArgs = await httpRequest({ port, body: { ...manualCall, params: { ...manualCall.params, arguments: { tag: 'master' } } } });
+    assert.equal(JSON.parse(withArgs.text).result.isError, true);
+    assert.equal(reads, 0);
+
+    for (const [tag, text] of [['v18.0.3', '# Reference manual for firmware A'], ['v18.0.4', '# Reference manual for firmware B']]) {
+        firmwareGitTag = tag;
         manual = text;
         const response = await httpRequest({ port, body: manualRead });
         assert.deepEqual(JSON.parse(response.text).result.contents, [{ uri: manualUri, mimeType: 'text/markdown', text }]);
+        const called = await httpRequest({ port, body: manualCall });
+        assert.deepEqual(JSON.parse(called.text).result.content, [{ type: 'text', text: `${repo} ${tag}\n\n${text}` }]);
     }
     for (const message of [
         'Connect a keyboard in Agent to read its smart-macro reference manual.',
@@ -47,7 +63,12 @@ test('MCP reads the current reference manual and reports when it is unavailable'
         manual = new Error(message);
         const response = await httpRequest({ port, body: manualRead });
         assert.equal(JSON.parse(response.text).error.message, message);
+        const called = await httpRequest({ port, body: manualCall });
+        const { result } = JSON.parse(called.text) as { result: McpToolReply };
+        assert.equal(result.isError, true);
+        assert.equal(result.content[0].text, message);
     }
+    assert.equal(reads, 8);
 });
 
 test('HTTP enforces access before dispatching MCP and serves only POST /mcp', async context => {
@@ -105,7 +126,7 @@ test('the SDK advertises all tools and forwards validated lookup arguments', asy
     const listed = await httpRequest({ port, body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } });
     const tools = JSON.parse(listed.text).result.tools as { name: string; description: string }[];
     assert.deepEqual(tools.map(tool => tool.name).sort(), [
-        'create_macro', 'delete_macro', 'get_device_info', 'get_layer', 'get_macro', 'get_macro_errors', 'get_unsaved_changes',
+        'create_macro', 'delete_macro', 'get_device_info', 'get_layer', 'get_macro', 'get_macro_errors', 'get_reference_manual', 'get_unsaved_changes',
         'list_keymaps', 'list_macros', 'rename_macro', 'set_key_action', 'update_macro',
     ]);
     assert.match(tools.find(tool => tool.name === 'get_unsaved_changes').description, /keymap.*added or removed/i);
@@ -115,6 +136,9 @@ test('the SDK advertises all tools and forwards validated lookup arguments', asy
     assert.match(macroTool.description, /OLED.*about 24 characters.*no scrolling/i);
     assert.match(macroTool.description, /raw values.*\$battery\.chargeLimit.*1 or 0/i);
     assert.match(macroTool.description, /`notify`.*if\/else.*wrong text.*UltimateHackingKeyboard\/firmware#1668/i);
+    for (const name of ['get_macro', 'create_macro', 'update_macro']) {
+        assert.match(tools.find(tool => tool.name === name).description, /call get_reference_manual before writing smart-macro commands/i);
+    }
     const params = { name: 'get_layer', arguments: { keymap: 'Unsaved', layer: 'fn' } };
     const called = await httpRequest({ port, body: { ...toolCall, params } });
     const { result } = JSON.parse(called.text) as { result: McpToolReply };

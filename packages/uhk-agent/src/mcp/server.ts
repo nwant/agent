@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { createServer, Server } from 'node:http';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import type { McpSettings, McpToolCall, McpToolReply } from 'uhk-common';
+import type { FirmwareReferenceManual, McpSettings, McpToolCall, McpToolReply } from 'uhk-common';
 import { checkMcpAccess } from './access-gate';
 
 const REFERENCE_MANUAL_URI = 'uhk://smart-macro/reference-manual';
@@ -14,7 +14,7 @@ export class AgentMcpServer {
 
     constructor(
         private readonly request: (call: McpToolCall) => Promise<McpToolReply>,
-        private readonly readReferenceManual: () => Promise<string>,
+        private readonly readReferenceManual: () => Promise<FirmwareReferenceManual>,
     ) {}
 
     async start(settings: Pick<McpSettings, 'enabled' | 'port' | 'token'>): Promise<void> {
@@ -56,12 +56,15 @@ export class AgentMcpServer {
                 description: 'Markdown reference manual for the firmware on the connected keyboard.',
                 mimeType: REFERENCE_MANUAL_MIME_TYPE,
             }, async () => ({
-                contents: [{ uri: REFERENCE_MANUAL_URI, mimeType: REFERENCE_MANUAL_MIME_TYPE, text: await this.readReferenceManual() }],
+                contents: [{ uri: REFERENCE_MANUAL_URI, mimeType: REFERENCE_MANUAL_MIME_TYPE, text: (await this.readReferenceManual()).text }],
             }));
-            const registerTool = (name: string, description: string, { inputSchema, readOnly = false, destructive = false }: {
-                inputSchema: z.ZodRawShape;
+            const registerTool = (name: string, description: string, {
+                inputSchema, readOnly = false, destructive = false, run = args => this.request({ name, arguments: args }),
+            }: {
+                inputSchema: z.ZodRawShape | z.ZodObject;
                 readOnly?: boolean;
                 destructive?: boolean;
+                run?: (args: Record<string, unknown>) => Promise<McpToolReply>;
             }) => {
                 mcp.registerTool(name, {
                     description,
@@ -74,17 +77,26 @@ export class AgentMcpServer {
                     },
                 }, async (args: Record<string, unknown>) => {
                     try {
-                        return { ...await this.request({ name, arguments: args }) };
+                        return { ...await run(args) };
                     } catch (error) {
                         return {
                             isError: true,
-                            content: [{ type: 'text', text: error instanceof Error ? error.message : 'Agent window is unavailable.' }],
+                            content: [{ type: 'text' as const, text: error instanceof Error ? error.message : 'Agent window is unavailable.' }],
                         };
                     }
                 });
             };
             const registerRead = (name: string, description: string, inputSchema: Record<string, z.ZodString> = {}) =>
                 registerTool(name, description, { inputSchema, readOnly: true });
+            registerTool('get_reference_manual', 'Read the full smart-macro reference manual for the firmware on the connected keyboard.', {
+                inputSchema: z.strictObject({}),
+                readOnly: true,
+                run: async () => {
+                    const { firmwareGitRepo, firmwareGitTag, text } = await this.readReferenceManual();
+                    return { content: [{ type: 'text', text: `${firmwareGitRepo} ${firmwareGitTag}\n\n${text}` }] };
+                },
+            });
+            const macroManualNote = 'Call get_reference_manual before writing smart-macro commands for the connected firmware.';
             registerRead('get_device_info', 'Read the connected keyboard model, firmware version, connection state and physical halves from Agent.');
             registerRead('list_keymaps', 'List current keymap names, abbreviations and layers, including unsaved changes.');
             registerRead('get_layer', 'Read physical key labels and serialized actions. Use a keymap abbreviation or unique name and a layer from list_keymaps.', {
@@ -94,7 +106,7 @@ export class AgentMcpServer {
             registerRead('get_macro', [
                 'Read a macro by name. Text macro actions are hidden unless enabled in Agent.',
                 'Smart-macro commands, including text typed by `write`, are visible to the AI client.',
-                `Use ${REFERENCE_MANUAL_URI} for syntax on the connected firmware.`,
+                macroManualNote,
                 'Known pitfalls: The OLED shows about 24 characters with no scrolling.',
                 'Settings read back as raw values, for example `$battery.chargeLimit` reads as 1 or 0.',
                 '`notify` on an if/else line shows the wrong text on firmware before the fix in UltimateHackingKeyboard/firmware#1668.',
@@ -129,11 +141,11 @@ export class AgentMcpServer {
             const macroActions = z.array(z.record(z.string(), z.unknown())).describe('Ordered actions in the serializer JSON shape returned by get_macro.');
             const macroFlags = { isLooped: z.boolean().optional(), isPrivate: z.boolean().optional() };
             registerTool('create_macro',
-                `Create a macro with a unique name. isLooped and isPrivate default to false. ${macroWriteNote}`, {
+                `Create a macro with a unique name. isLooped and isPrivate default to false. ${macroManualNote} ${macroWriteNote}`, {
                     inputSchema: { name: macroName, macroActions, ...macroFlags },
                 });
             registerTool('update_macro',
-                `Update a macro by name. Supply at least one of macroActions, isLooped or isPrivate. Omitted fields are kept. macroActions replaces the entire action list. Supply the actual replacement text for text actions, whose contents Agent can keep hidden in replies. ${macroWriteNote}`, {
+                `Update a macro by name. Supply at least one of macroActions, isLooped or isPrivate. Omitted fields are kept. macroActions replaces the entire action list. Supply the actual replacement text for text actions, whose contents Agent can keep hidden in replies. ${macroManualNote} ${macroWriteNote}`, {
                     inputSchema: { name: macroName, macroActions: macroActions.optional(), ...macroFlags },
                     destructive: true,
                 });

@@ -1,9 +1,11 @@
 import {
-    KeyActionHelper, keyActionType, LayerName, Macro, MacroActionHelper, macroActionType, MAX_ALLOWED_MACROS, MAX_ALLOWED_MACROS_TOOLTIP, NoneAction,
-    type Keymap, type Layer, type MacroAction, type McpToolCall, type McpToolReply, type UserConfiguration,
+    CommandMacroAction, KeyActionHelper, keyActionType, LayerName, Macro, MacroActionHelper, macroActionType,
+    MAX_ALLOWED_MACROS, MAX_ALLOWED_MACROS_TOOLTIP, NoneAction,
+    type FirmwareRepoInfo, type Keymap, type Layer, type MacroAction, type McpToolCall, type McpToolReply, type UserConfiguration,
 } from 'uhk-common';
 
 import type { ConfigDiffEntry, UserConfigurationJson } from './config-diff.js';
+import type { FirmwareCommands } from './firmware-commands.js';
 import { diffUserConfigurationWithRiskFlags } from './risk-flags.js';
 import { generateMacroId, insertItemInNameOrder } from '../util/configuration-items.js';
 import { findMacroKeyAssignments } from '../util/find-macro-key-assignments.js';
@@ -19,6 +21,8 @@ export interface McpDeviceInfo {
 
 interface ToolState {
     info?: McpDeviceInfo;
+    firmware?: FirmwareRepoInfo;
+    commandManual?: Required<FirmwareRepoInfo> & { commands: FirmwareCommands };
     config: UserConfiguration;
     statusText: string;
     /** The serializer JSON of what the keyboard has, or undefined when Agent has not read it. */
@@ -183,9 +187,10 @@ function requireKeyboard(state: ToolState): void {
     }
 }
 
-function finishWrite(state: ToolState, config: UserConfiguration, { value, summary }: {
+function finishWrite(state: ToolState, config: UserConfiguration, { value, summary, commandCheckNotice = '' }: {
     value: Record<string, unknown>;
     summary: string;
+    commandCheckNotice?: string;
 }): WriteResult {
     try {
         config.recalculateConfigurationLength();
@@ -200,7 +205,7 @@ function finishWrite(state: ToolState, config: UserConfiguration, { value, summa
             ...value,
             errors: [],
             riskFlags: [...new Set(written.flatMap(entry => entry.riskFlags))],
-            summary: `${summary} in Agent's unsaved changes; nothing was written to the keyboard. ${KEY_PRESS_IS_THE_TEST}`,
+            summary: `${summary} in Agent's unsaved changes; nothing was written to the keyboard. ${commandCheckNotice}${KEY_PRESS_IS_THE_TEST}`,
         },
         next: { config, aiTags },
     };
@@ -323,6 +328,25 @@ function setMacroFlags(macro: Macro, { isLooped, isPrivate }: Record<string, unk
     }
 }
 
+function checkMacroCommands(state: ToolState, actions: MacroAction[]): string {
+    const commandActions = actions.filter(action => action instanceof CommandMacroAction);
+    if (!commandActions.length) {
+        return '';
+    }
+    const { firmware, commandManual } = state;
+    if (!commandManual?.commands.names.size || commandManual.firmwareGitRepo !== firmware?.firmwareGitRepo
+        || commandManual.firmwareGitTag !== firmware?.firmwareGitTag) {
+        return 'Smart-macro command name check skipped: no usable reference manual is available for the connected firmware. ';
+    }
+    for (const { command } of commandActions) {
+        const unlisted = commandManual.commands.firstUnlistedCommand(command);
+        if (unlisted) {
+            throw new ToolError(`The command "${unlisted}" is not in the reference manual for the connected firmware (${commandManual.firmwareGitRepo} ${commandManual.firmwareGitTag}).`);
+        }
+    }
+    return '';
+}
+
 function createMacro(state: ToolState, args: Record<string, unknown>): WriteResult {
     const next = state.config.clone();
     if (next.macros.length >= MAX_ALLOWED_MACROS) {
@@ -334,9 +358,10 @@ function createMacro(state: ToolState, args: Record<string, unknown>): WriteResu
     macro.isPrivate = false;
     setMacroFlags(macro, args);
     macro.macroActions = parseMacroActions(next, args.macroActions);
+    const commandCheckNotice = checkMacroCommands(state, macro.macroActions);
     macro.id = generateMacroId(next.macros);
     next.macros = insertItemInNameOrder(next.macros, macro);
-    return finishWrite(state, next, { value: { macro: macro.toJsonObject() }, summary: 'Macro created' });
+    return finishWrite(state, next, { value: { macro: macro.toJsonObject() }, summary: 'Macro created', commandCheckNotice });
 }
 
 function updateMacro(state: ToolState, args: Record<string, unknown>): WriteResult {
@@ -347,10 +372,12 @@ function updateMacro(state: ToolState, args: Record<string, unknown>): WriteResu
         throw new ToolError('Provide macroActions, isLooped or isPrivate to update the macro.');
     }
     setMacroFlags(macro, args);
+    let commandCheckNotice = '';
     if (macroActions !== undefined) {
         macro.macroActions = parseMacroActions(next, macroActions);
+        commandCheckNotice = checkMacroCommands(state, macro.macroActions);
     }
-    return finishWrite(state, next, { value: { macro: macro.toJsonObject() }, summary: 'Macro updated' });
+    return finishWrite(state, next, { value: { macro: macro.toJsonObject() }, summary: 'Macro updated', commandCheckNotice });
 }
 
 function renameMacro(state: ToolState, args: Record<string, unknown>): WriteResult {

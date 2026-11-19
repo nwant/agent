@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import { join } from 'node:path';
 import getPort from 'get-port';
 import fastify, { FastifyInstance } from 'fastify';
-import { FirmwareRepoInfo, IpcEvents, LogService } from 'uhk-common';
+import { FirmwareRepoInfo, IpcEvents, LogService, type FirmwareReferenceManual } from 'uhk-common';
 import { pathExists } from 'uhk-fs';
 import { getPackageJsonFromPathAsync } from 'uhk-usb';
 import { downloadSmartMacroDoc, DownloadSmartMacroDocOptions, downloadSmartMacroReferenceManual, REFERENCE_MANUAL_FILE_NAME } from 'uhk-smart-macro';
@@ -100,13 +100,13 @@ export class SmartMacroDocService {
         this.logService.misc(serviceLogMessage('stopped.'));
     }
 
-    public async readConnectedReferenceManual(firmware: FirmwareRepoInfo | undefined): Promise<string> {
+    public async readConnectedReferenceManual(firmware: FirmwareRepoInfo | undefined): Promise<FirmwareReferenceManual> {
         if (!firmware) {
             throw new Error('Connect a keyboard in Agent to read its smart-macro reference manual.');
         }
 
         try {
-            return await this.readReferenceManual(this.documentationOptions(firmware));
+            return await this.readVersionedReferenceManual(this.documentationOptions(firmware));
         } catch (error) {
             this.logService.error(serviceLogMessage('Could not read the connected firmware reference manual'), error);
             throw new Error('The smart-macro reference manual is unavailable for the connected firmware.');
@@ -131,7 +131,7 @@ export class SmartMacroDocService {
 
         event.sender.send(IpcEvents.smartMacroDoc.downloadDocumentationReply, firmwareRepoInfo);
 
-        const referenceManual = await this.readReferenceManual(options);
+        const referenceManual = await this.readVersionedReferenceManual(options);
         event.sender.send(IpcEvents.smartMacroDoc.referenceManualReply, referenceManual);
     }
 
@@ -143,6 +143,14 @@ export class SmartMacroDocService {
             throw new Error('Missing or invalid firmware repository or tag.');
         }
         return { owner, repo, ref, directory: join(this.rootPath, owner, repo, ref) };
+    }
+
+    private async readVersionedReferenceManual(options: DownloadSmartMacroDocOptions): Promise<FirmwareReferenceManual> {
+        return {
+            firmwareGitRepo: `${options.owner}/${options.repo}`,
+            firmwareGitTag: options.ref,
+            text: await this.readReferenceManual(options),
+        };
     }
 
     private readReferenceManual(options: DownloadSmartMacroDocOptions): Promise<string> {

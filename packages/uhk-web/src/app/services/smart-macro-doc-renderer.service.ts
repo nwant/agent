@@ -1,10 +1,9 @@
 import { Injectable, NgZone, inject } from '@angular/core';
 import { Action, Store } from '@ngrx/store';
-import { FirmwareRepoInfo, IpcEvents, LogService } from 'uhk-common';
+import { FirmwareRepoInfo, IpcEvents, LogService, type FirmwareReferenceManual } from 'uhk-common';
 
 import { AppState } from '../store';
-import { ReferenceManualChangedAction } from '../store/actions/smart-macro-doc.action';
-import { DownloadDocumentationSuccessAction, ServiceListeningAction } from '../store/actions/smart-macro-doc.action';
+import { DownloadDocumentationSuccessAction, ReferenceManualChangedAction, ServiceListeningAction } from '../store/actions/smart-macro-doc.action';
 import { IpcCommonRenderer } from './ipc-common-renderer';
 
 @Injectable()
@@ -33,8 +32,8 @@ export class SmartMacroDocRendererService {
             this.dispatchStoreAction(new DownloadDocumentationSuccessAction(firmwareRepoInfo));
         });
 
-        this.ipcRenderer.on(IpcEvents.smartMacroDoc.referenceManualReply, (event: string, arg: string) => {
-            this.dispatchStoreAction(new ReferenceManualChangedAction(arg));
+        this.ipcRenderer.on(IpcEvents.smartMacroDoc.referenceManualReply, (_event: unknown, manual: FirmwareReferenceManual) => {
+            this.dispatchStoreAction(new ReferenceManualChangedAction(manual));
         });
     }
 

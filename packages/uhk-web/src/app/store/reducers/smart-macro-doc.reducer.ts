@@ -1,10 +1,11 @@
-import { FirmwareRepoInfo } from 'uhk-common';
+import type { FirmwareReferenceManual, FirmwareRepoInfo } from 'uhk-common';
 
 import * as fromApp from '../actions/app';
 import {
     ActionTypes,
     DownloadDocumentationSuccessAction,
     PanelSizeChangedAction,
+    ReferenceManualChangedAction,
     SmartMacroDocActions
 } from '../actions/smart-macro-doc.action';
 
@@ -20,6 +21,7 @@ export enum FirmwareDocState {
 export interface State {
     firmwareDocState: FirmwareDocState;
     firmwareDocRepoInfo: FirmwareRepoInfo;
+    referenceManual?: FirmwareReferenceManual;
     panelSize: number;
     panelVisible: boolean;
     port?: number;
@@ -55,6 +57,12 @@ export function reducer(state = initialState, action: SmartMacroDocActions | fro
                 ...state,
                 firmwareDocState: FirmwareDocState.Loaded,
                 firmwareDocRepoInfo: (action as DownloadDocumentationSuccessAction).payload,
+            };
+
+        case ActionTypes.ReferenceManualChanged:
+            return {
+                ...state,
+                referenceManual: (action as ReferenceManualChangedAction).payload,
             };
 
         case ActionTypes.PanelSizeChanged:

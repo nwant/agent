@@ -1,14 +1,27 @@
 import { Injectable, inject } from '@angular/core';
-import { Store } from '@ngrx/store';
+import { createSelector, Store } from '@ngrx/store';
 import { take } from 'rxjs/operators';
 import { ConfigureMcp, IpcEvents, MCP_MAX_PORT, MCP_MIN_PORT, McpStatus, McpToolRequest } from 'uhk-common';
 import { McpRendererService } from '../../app/services/mcp-renderer.service';
 import { IpcCommonRenderer } from '../../app/services/ipc-common-renderer';
-import { AppState, getAiTags, getMcpDeviceInfo, getUserConfiguration, getDefaultUserConfiguration, getKeyboardBaseline, getLatestStatusBuffer } from '../../app/store';
+import {
+    AppState, getAiTags, getMcpDeviceInfo, getUserConfiguration, getDefaultUserConfiguration, getKeyboardBaseline,
+    getLatestStatusBuffer, getRightModuleFirmwareRepoInfo, smartMacroDocState,
+} from '../../app/store';
 import { ApplyAiUserConfigurationAction } from '../../app/store/actions/user-config';
 import { MapperService } from '../../app/services/mapper.service';
 import { getDefaultQwertyKeyLabel } from '../../app/util/get-default-key-label';
 import { handleMcpTool } from '../../app/mcp/tool-handler';
+import { readFirmwareCommands } from '../../app/mcp/firmware-commands';
+
+const getReferenceManual = createSelector(smartMacroDocState, state => state.referenceManual);
+const getCommandManual = createSelector(getReferenceManual, manual => {
+    if (manual) {
+        const { firmwareGitRepo, firmwareGitTag, text } = manual;
+        return { firmwareGitRepo, firmwareGitTag, commands: readFirmwareCommands(text) };
+    }
+    return undefined;
+});
 
 @Injectable()
 export class ElectronMcpRendererService extends McpRendererService {
@@ -23,6 +36,8 @@ export class ElectronMcpRendererService extends McpRendererService {
             this.store.pipe(take(1)).subscribe(state => {
                 const { next, ...reply } = handleMcpTool({
                     info: getMcpDeviceInfo(state),
+                    firmware: getRightModuleFirmwareRepoInfo(state),
+                    get commandManual() { return getCommandManual(state); },
                     config: getUserConfiguration(state),
                     baseline: getKeyboardBaseline(state),
                     statusText: getLatestStatusBuffer(state),
