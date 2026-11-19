@@ -713,10 +713,10 @@ test('display updates and ordinary layer or keymap switches do not flag a keyboa
     }
 });
 
-test('keymap overlays, keymap replacements and power mode commands flag a keyboard change', () => {
+test('layer and keymap overlays and replacements and power mode commands flag a keyboard change', () => {
     const { config, baseline } = writeFixture();
     const state = { ...baseState, config, baseline, info: connected };
-    for (const command of ['overlayKeymap QWR', 'replaceKeymap QWR', 'powerMode wake']) {
+    for (const command of ['overlayLayer QWR fn', 'ifShift replaceLayer QWR fn', 'overlayKeymap QWR', 'replaceKeymap QWR', 'powerMode wake']) {
         const { result, body } = callMacroTool(state, 'create_macro', {
             name: 'Example', macroActions: [{ macroActionType: 'command', command }],
         });

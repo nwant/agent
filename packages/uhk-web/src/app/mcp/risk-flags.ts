@@ -18,13 +18,15 @@ const KEY_COMMANDS = new Map([
 const TEXT_COMMANDS = new Set(['write', 'writeExpr', 'printStatus']);
 const MACRO_CALLS = new Set(['call', 'exec', 'fork', 'playMacro']);
 const LOCKOUT_COMMANDS = new Set(['switchHost', 'unpairHost', 'resetConfiguration', 'freeze', 'panic']);
-const KEYBOARD_CHANGING_COMMANDS = new Set(['set', 'overlayKeymap', 'replaceKeymap', 'powerMode', ...LOCKOUT_COMMANDS]);
+const KEYBOARD_CHANGING_COMMANDS = new Set([
+    'set', 'overlayLayer', 'replaceLayer', 'overlayKeymap', 'replaceKeymap', 'powerMode', ...LOCKOUT_COMMANDS,
+]);
 const COMMANDS_AFTER_PREFIX = new Set([
     ...KEY_COMMANDS.keys(), ...TEXT_COMMANDS, ...MACRO_CALLS, ...KEYBOARD_CHANGING_COMMANDS,
     // Recognize these commands so their arguments are not mistaken for commands after a conditional.
     'setLedTxt', 'notify', 'resetTrackpoint', 'switchKeymap', 'switchLayer', 'switchKeymapLayer',
     'toggleLayer', 'toggleKeymapLayer', 'untoggleLayer', 'holdLayer', 'holdLayerMax', 'holdKeymapLayer',
-    'holdKeymapLayerMax', 'overlayLayer', 'replaceLayer', 'reconnect', 'reboot', 'zephyr',
+    'holdKeymapLayerMax', 'reconnect', 'reboot', 'zephyr',
 ]);
 const COMMAND_PREFIX = /^(?:if[A-Z]\w*|if|else|while|suppressMods|suppressKeys|postponeKeys|final|autoRepeat|oneShot)$/;
 const LAUNCHER_SHORTCUTS = [
