@@ -171,3 +171,12 @@ function diffSettings(baseline: UserConfigurationJson, current: UserConfiguratio
 export function diffUserConfiguration(baseline: UserConfigurationJson, current: UserConfigurationJson): ConfigDiffEntry[] {
     return [...diffKeymaps(baseline, current), ...diffMacros(baseline, current), ...diffSettings(baseline, current)];
 }
+
+export function pruneAiTags(tags: string[], baseline: UserConfigurationJson | undefined, current: UserConfigurationJson): string[] {
+    if (!tags.length || !baseline) {
+        return tags;
+    }
+    const changedIds = new Set(diffUserConfiguration(baseline, current).map(entry => entry.id));
+    const remaining = tags.filter(id => changedIds.has(id));
+    return remaining.length === tags.length ? tags : remaining;
+}

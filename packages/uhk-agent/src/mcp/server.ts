@@ -58,13 +58,20 @@ export class AgentMcpServer {
             }, async () => ({
                 contents: [{ uri: REFERENCE_MANUAL_URI, mimeType: REFERENCE_MANUAL_MIME_TYPE, text: await this.readReferenceManual() }],
             }));
-            const registerTool = (name: string, description: string, inputSchema: z.ZodRawShape, readOnly: boolean) => {
+            const registerTool = (name: string, description: string, { inputSchema, readOnly = false, destructive = false }: {
+                inputSchema: z.ZodRawShape;
+                readOnly?: boolean;
+                destructive?: boolean;
+            }) => {
                 mcp.registerTool(name, {
                     description,
                     inputSchema,
-                    annotations: readOnly
-                        ? { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
-                        : { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+                    annotations: {
+                        readOnlyHint: readOnly,
+                        destructiveHint: destructive,
+                        openWorldHint: false,
+                        ...!readOnly ? { idempotentHint: true } : {},
+                    },
                 }, async (args: Record<string, unknown>) => {
                     try {
                         return { ...await this.request({ name, arguments: args }) };
@@ -77,7 +84,7 @@ export class AgentMcpServer {
                 });
             };
             const registerRead = (name: string, description: string, inputSchema: Record<string, z.ZodString> = {}) =>
-                registerTool(name, description, inputSchema, true);
+                registerTool(name, description, { inputSchema, readOnly: true });
             registerRead('get_device_info', 'Read the connected keyboard model, firmware version, connection state and physical halves from Agent.');
             registerRead('list_keymaps', 'List current keymap names, abbreviations and layers, including unsaved changes.');
             registerRead('get_layer', 'Read physical key labels and serialized actions. Use a keymap abbreviation or unique name and a layer from list_keymaps.', {
@@ -107,12 +114,37 @@ export class AgentMcpServer {
                 'Agent refuses the change if the keymap, layer, key or macro does not exist or the configuration would not serialize.',
                 'Passing the checks proves the configuration loads, not that it works: the user must save and press the key.',
             ].join(' '), {
-                keymap: z.string(),
-                layer: z.string(),
-                moduleId: z.number().int(),
-                keyId: z.number().int(),
-                action: z.union([z.literal('none'), z.record(z.string(), z.unknown())]),
-            }, false);
+                inputSchema: {
+                    keymap: z.string(),
+                    layer: z.string(),
+                    moduleId: z.number().int(),
+                    keyId: z.number().int(),
+                    action: z.union([z.literal('none'), z.record(z.string(), z.unknown())]),
+                },
+            });
+            const macroWriteNote = 'Proposes an unsaved change. The user reviews it and clicks Save to keyboard in Agent, then presses the assigned key to verify it works.';
+            const macroName = z.string();
+            const macroActions = z.array(z.record(z.string(), z.unknown())).describe('Ordered actions in the serializer JSON shape returned by get_macro.');
+            const macroFlags = { isLooped: z.boolean().optional(), isPrivate: z.boolean().optional() };
+            registerTool('create_macro',
+                `Create a macro with a unique name. isLooped and isPrivate default to false. ${macroWriteNote}`, {
+                    inputSchema: { name: macroName, macroActions, ...macroFlags },
+                });
+            registerTool('update_macro',
+                `Update a macro by name. Supply at least one of macroActions, isLooped or isPrivate. Omitted fields are kept. macroActions replaces the entire action list. Supply the actual replacement text for text actions, whose contents Agent can keep hidden in replies. ${macroWriteNote}`, {
+                    inputSchema: { name: macroName, macroActions: macroActions.optional(), ...macroFlags },
+                    destructive: true,
+                });
+            registerTool('rename_macro',
+                `Rename a macro by name and keep its existing key assignments. ${macroWriteNote}`, {
+                    inputSchema: { name: macroName, newName: macroName },
+                    destructive: true,
+                });
+            registerTool('delete_macro',
+                `Delete a macro by name. If it is assigned to keys, Agent refuses and lists those keys. ${macroWriteNote}`, {
+                    inputSchema: { name: macroName },
+                    destructive: true,
+                });
             registerRead('get_macro_errors', 'Read cached firmware macro errors and the latest status text, including setStatus output, after saving and pressing the assigned key.');
             void (async () => {
                 try {

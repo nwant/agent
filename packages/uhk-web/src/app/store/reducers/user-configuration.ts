@@ -24,7 +24,6 @@ import {
     LeftSlotModules,
     Macro,
     MacroActionHelper,
-    MAX_ALLOWED_MACROS,
     MODIFIER_LAYER_NAMES,
     Module,
     ModuleConfiguration,
@@ -68,8 +67,9 @@ import {
 } from '../../util';
 import * as AppActions from '../actions/app';
 import * as DeviceActions from '../actions/device';
+import { pruneAiTags, type UserConfigurationJson } from '../../mcp/config-diff';
+import { generateMacroId, insertItemInNameOrder } from '../../util/configuration-items';
 import * as Device from '../actions/device';
-import type { UserConfigurationJson } from '../../mcp/config-diff';
 import * as DonglePairing from '../actions/dongle-pairing.action';
 import * as KeymapActions from '../actions/keymap';
 import * as MacroActions from '../actions/macro';
@@ -124,10 +124,19 @@ export const initialState: State = {
     aiTags: [],
 };
 
-export function reducer(
-    state = initialState,
-    action: AppActions.Actions | KeymapActions.Actions | MacroActions.Actions | UserConfig.Actions | DeviceActions.Actions | DonglePairing.Actions
-): State {
+type ConfigurationAction = AppActions.Actions | KeymapActions.Actions | MacroActions.Actions | UserConfig.Actions | DeviceActions.Actions | DonglePairing.Actions;
+
+export function reducer(state = initialState, action: ConfigurationAction): State {
+    const next = reduceConfiguration(state, action);
+    const { aiTags, keyboardBaseline, userConfiguration } = next;
+    if (userConfiguration === state.userConfiguration || !keyboardBaseline || !aiTags.length) {
+        return next;
+    }
+    const remaining = pruneAiTags(aiTags, keyboardBaseline, userConfiguration.toJsonObject() as UserConfigurationJson);
+    return remaining === aiTags ? next : { ...next, aiTags: remaining };
+}
+
+function reduceConfiguration(state: State, action: ConfigurationAction): State {
     switch (action.type) {
 
         case AppActions.ActionTypes.SetAppTheme: {
@@ -207,6 +216,11 @@ export function reducer(
             if (isAiWrite) {
                 // Keymap edits depend on the selected keymap, so a proposed change keeps the user's selection.
                 newState.aiTags = (action as UserConfig.ApplyAiUserConfigurationAction).payload.aiTags;
+                if (newState.selectedMacroId !== undefined && !newState.userConfiguration.getMacro(newState.selectedMacroId)) {
+                    newState.selectedMacroId = undefined;
+                    newState.selectedMacroAction = undefined;
+                    newState.isSelectedMacroNew = false;
+                }
             } else {
                 newState.selectedKeymapAbbr = undefined;
             }
@@ -1631,51 +1645,6 @@ function generateName(items: { name: string }[], name: string) {
             return newName;
         }
     }
-}
-
-function generateMacroId(macros: Macro[]) {
-    let newId = 0;
-    const usedMacroIds = new Set();
-
-    macros.forEach((macro: Macro) => {
-        if (macro.id > newId) {
-            newId = macro.id;
-        }
-
-        usedMacroIds.add(macro.id);
-    });
-
-    newId += 1;
-
-    if (newId <= MAX_ALLOWED_MACROS)
-        return newId;
-
-    for (let i = 0; i <= MAX_ALLOWED_MACROS; i++) {
-        if (!usedMacroIds.has(i)) {
-            return i;
-        }
-    }
-}
-
-function insertItemInNameOrder<T extends { name: string }>(
-    items: T[], newItem: T, keepItem: (item: T) => boolean = () => true
-): T[] {
-    const newItems: T[] = [];
-    let added = false;
-    for (const item of items) {
-        if (!added && item.name.localeCompare(newItem.name) > 0) {
-            newItems.push(newItem);
-            added = true;
-        }
-        if (keepItem(item)) {
-            newItems.push(item);
-        }
-    }
-    if (!added) {
-        newItems.push(newItem);
-    }
-
-    return newItems;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

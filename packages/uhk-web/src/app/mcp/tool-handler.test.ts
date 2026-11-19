@@ -1,4 +1,7 @@
-import { Keymap, Macro, TextMacroAction, CommandMacroAction, US_BASIC_SCANCODE_TEXTS, UHK_80_USER_CONFIG, UserConfiguration } from 'uhk-common';
+import {
+    Keymap, Macro, TextMacroAction, CommandMacroAction, MAX_ALLOWED_MACROS, US_BASIC_SCANCODE_TEXTS, UHK_80_USER_CONFIG, UserConfiguration,
+    type McpToolCall,
+} from 'uhk-common';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { handleMcpTool, type McpDeviceInfo } from './tool-handler.js';
@@ -581,6 +584,265 @@ test('an unexpected failure during a write says nothing was changed', () => {
     const { setKey } = writeFixture();
     const { result } = setKey(keystrokeA, {}, { keyLabel: () => { throw new Error('boom'); } });
     assert.equal(result.isError, true);
-    assert.equal(result.content[0].text, 'Could not change the user configuration. Nothing was changed.');
+    assert.match(result.content[0].text, /^Could not change the user configuration\. Nothing was changed\./);
+    assert.match(result.content[0].text, /once a proposal passes the checks.*save to keyboard.*press the key/i);
     assert.equal(result.next, undefined);
+});
+
+function callMacroTool(state: Parameters<typeof handleMcpTool>[0], name: string, args: Record<string, unknown>) {
+    const before = state.config.toJsonObject();
+    const result = handleMcpTool(state, { name, arguments: args });
+    assert.deepEqual(state.config.toJsonObject(), before, 'the input configuration is not mutated');
+    const body = result.isError ? result.content[0].text : JSON.parse(result.content[0].text);
+    return { result, body };
+}
+
+function assertMacroWriteReply(reply: unknown) {
+    const body = reply as { errors: unknown[]; summary: string };
+    assert.deepEqual(body.errors, []);
+    assert.match(body.summary, /checks prove the configuration loads, not that it works/i);
+    assert.match(body.summary, /save to keyboard/i);
+    assert.match(body.summary, /press the key/i);
+}
+
+test('create_macro adds a proposed change and preserves existing macro key assignments', () => {
+    const { config, baseline, abbreviation } = writeFixture(json => {
+        baseKeys(json)[27] = { keyActionType: 'playMacro', macroIndex: 0, macroArguments: [] };
+    });
+    const state = { ...baseState, config, baseline, info: connected };
+    const { result, body } = callMacroTool(state, 'create_macro', newMacro);
+    assert.equal(result.isError, false, result.content[0].text);
+    assert.ok(result.next);
+    assert.deepEqual(body.macro, newMacro);
+    assertMacroWriteReply(body);
+    const changes = handleMcpTool({ ...state, ...result.next }, { name: 'get_unsaved_changes' });
+    assert.deepEqual(JSON.parse(changes.content[0].text).changes.map(({ id, aiTagged }) => ({ id, aiTagged })), [
+        { id: 'macro:AAA first', aiTagged: true },
+    ]);
+
+    const layer = handleMcpTool({ ...state, ...result.next }, {
+        name: 'get_layer', arguments: { keymap: abbreviation, layer: 'base' },
+    });
+    const { action } = JSON.parse(layer.content[0].text).keys.find(key => key.moduleId === 0 && key.keyId === 27);
+    assert.equal(result.next.config.macros[action.macroIndex].name, config.macros[0].name);
+});
+
+test('update_macro replaces hidden text in an assigned macro and preserves its other fields and assignments', () => {
+    const original = 'fixture-text-before';
+    const replacement = 'fixture-text-after 🔑';
+    const { config, baseline } = writeFixture(json => {
+        json.macros[0].isPrivate = true;
+        json.macros[0].macroActions = [{ macroActionType: 'text', text: original }];
+        baseKeys(json)[27] = { keyActionType: 'playMacro', macroIndex: 0, macroArguments: [] };
+    });
+    const state = { ...baseState, config, baseline, info: connected };
+    const { name } = config.macros[0];
+    const { result, body } = callMacroTool(state, 'update_macro', {
+        name, macroActions: [{ macroActionType: 'text', text: replacement }],
+    });
+    assert.equal(result.isError, false, result.content[0].text);
+    assert.ok(result.next);
+    assert.equal(body.macro.name, name);
+    assert.equal(body.macro.isPrivate, true);
+    assert.deepEqual(body.macro.macroActions, [{ macroActionType: 'text', text: '[text macro, 20 characters, hidden]' }]);
+    assertMacroWriteReply(body);
+    const revealed = handleMcpTool({ ...state, ...result.next }, { name: 'get_macro', arguments: { name } }, true);
+    assert.equal(JSON.parse(revealed.content[0].text).macroActions[0].text, replacement);
+    const changes = handleMcpTool({ ...state, ...result.next }, { name: 'get_unsaved_changes' });
+    assert.deepEqual(JSON.parse(changes.content[0].text).changes.map(({ id, aiTagged }) => ({ id, aiTagged })), [
+        { id: `macro:${name}`, aiTagged: true },
+    ]);
+});
+
+test('update_macro changes only the supplied flag on a macro loaded from an older export', () => {
+    const { config, baseline } = writeFixture(json => {
+        delete json.macros[0].isPrivate;
+        json.macros[0].macroActions = [{ macroActionType: 'delay', delay: 18 }];
+    });
+    const [macro] = config.macros;
+    const state = { ...baseState, config, baseline, info: connected };
+    const { result, body } = callMacroTool(state, 'update_macro', { name: macro.name, isLooped: false });
+    assert.equal(result.isError, false, result.content[0].text);
+    assert.equal(body.macro.isLooped, false);
+    assert.equal(result.next.config.getMacro(macro.id).isPrivate, undefined);
+    assert.deepEqual(body.macro.macroActions, [{ macroActionType: 'delay', delay: 18 }]);
+});
+
+test('rename_macro keeps key assignments and tags the renamed macro and its changed diff entries', () => {
+    const { config, baseline, abbreviation } = writeFixture(json => {
+        json.macros[0].macroActions = [{ macroActionType: 'delay', delay: 100 }];
+        baseKeys(json)[27] = { keyActionType: 'playMacro', macroIndex: 0, macroArguments: [] };
+    });
+    const state = { ...baseState, config, baseline, info: connected };
+    const { name } = config.macros[0];
+    const newName = 'Renamed macro';
+    const { result, body } = callMacroTool(state, 'rename_macro', { name, newName });
+    assert.equal(result.isError, false, result.content[0].text);
+    assert.ok(result.next);
+    assert.deepEqual(body.macro, { ...config.macros[0].toJsonObject(), name: newName });
+    assertMacroWriteReply(body);
+    const changes = handleMcpTool({ ...state, ...result.next }, { name: 'get_unsaved_changes' });
+    const [key, removed, added] = JSON.parse(changes.content[0].text).changes;
+    assert.equal(key.id, `key:${abbreviation}/base/0/27`);
+    assert.equal(key.after.macroName, newName);
+    assert.equal(removed.id, `macro:${name}`);
+    assert.equal(added.id, `macro:${newName}`);
+    assert.ok([key, removed, added].every(change => change.aiTagged));
+});
+
+test('delete_macro lists every assigned key and removes the macro only after its assignments are cleared', () => {
+    const { config, baseline, abbreviation, setKey } = writeFixture(json => {
+        const assignment = { keyActionType: 'playMacro', macroIndex: 0, macroArguments: [] };
+        baseKeys(json)[27] = assignment;
+        baseKeys(json)[28] = assignment;
+    });
+    const state = { ...baseState, config, baseline, info: connected };
+    const { name } = config.macros[0];
+    const refused = callMacroTool(state, 'delete_macro', { name });
+    assert.equal(refused.result.isError, true);
+    assert.equal(refused.result.next, undefined);
+    const { message, keys } = JSON.parse(refused.result.content[0].text) as { message: string; keys: unknown[] };
+    assert.match(message, /assigned to/);
+    assert.match(message, /once a proposal passes the checks.*save to keyboard.*press the key/i);
+    assert.deepEqual(keys, [27, 28].map(keyId => ({
+        keymap: abbreviation, layer: 'base', moduleId: 0, keyId, label: keyLabel(0, keyId),
+    })));
+
+    const first = setKey('none').result.next;
+    const second = setKey('none', { keyId: 28 }, first).result.next;
+    const deleted = callMacroTool({ ...state, ...second }, 'delete_macro', { name });
+    assert.equal(deleted.result.isError, false, deleted.result.content[0].text);
+    assert.deepEqual({ name: deleted.body.name, macro: deleted.body.macro }, { name, macro: null });
+    assertMacroWriteReply(deleted.body);
+    assert.ok(deleted.result.next);
+    const after = handleMcpTool({ ...state, ...deleted.result.next }, { name: 'get_macro', arguments: { name } });
+    assert.equal(after.isError, true);
+    assert.ok(deleted.result.next.aiTags.includes(`macro:${name}`));
+});
+
+test('invalid macro writes leave the current configuration unchanged', () => {
+    const { config, baseline } = writeFixture();
+    const [existing, duplicate] = config.macros;
+    const state = { ...baseState, config, baseline, info: connected };
+    for (const [name, args, message] of [
+        ['create_macro', { ...newMacro, name: '  ' }, /non-empty macro name/i],
+        ['create_macro', { ...newMacro, name: 42 }, /non-empty macro name/i],
+        ['create_macro', { ...newMacro, name: existing.name }, /already exists/i],
+        ['create_macro', { name: newMacro.name, macroActions: null }, /array of macro actions/],
+        ['create_macro', { ...newMacro, isLooped: 'false' }, /must be booleans/],
+        ['rename_macro', { name: existing.name, newName: duplicate.name }, /already exists/i],
+        ['rename_macro', { name: 'missing', newName: newMacro.name }, /unknown macro/i],
+        ['delete_macro', { name: 'missing' }, /unknown macro/i],
+        ['update_macro', { name: existing.name }, /provide macroActions/i],
+        ['update_macro', { name: existing.name, isPrivate: 1 }, /must be booleans/],
+        ['update_macro', { name: existing.name, macroActions: [{ macroActionType: 'delay', delay: 2.5 }] }, /invalid macro action/i],
+        ['update_macro', { name: existing.name, macroActions: [{ macroActionType: 'delay' }] }, /invalid macro action/i],
+        ['update_macro', { name: existing.name, macroActions: [{ macroActionType: 'key', action: 'unknown' }] }, /invalid macro action/i],
+        ['update_macro', { name: existing.name, macroActions: [null] }, /invalid macro action at position 1/i],
+        ['update_macro', { name: existing.name, macroActions: [{ macroActionType: 'text', text: 12 }] }, /invalid macro action/i],
+        ['update_macro', { name: existing.name, macroActions: [{ macroActionType: 'delay', delay: 2, ignored: true }] }, /invalid macro action/i],
+        ['update_macro', { name: existing.name, macroActions: [{ macroActionType: 'text', text: 'x'.repeat(65536) }] }, /would not serialize/i],
+    ] as const) {
+        const { result } = callMacroTool(state, name, args);
+        assert.equal(result.isError, true, name);
+        assert.match(result.content[0].text, message);
+        assert.equal(result.next, undefined);
+    }
+});
+
+test('rename_macro to the current name produces no diff or tags', () => {
+    const { config, baseline } = writeFixture();
+    const state = { ...baseState, config, baseline, info: connected };
+    const { name } = config.macros[0];
+    const { result } = callMacroTool(state, 'rename_macro', { name, newName: ` ${name} ` });
+    assert.equal(result.isError, false, result.content[0].text);
+    assert.deepEqual(result.next.config.toJsonObject(), baseline);
+    assert.deepEqual(result.next.aiTags, []);
+});
+
+test('macro writes refuse an ambiguous macro name', () => {
+    const { config, baseline } = writeFixture(json => {
+        json.macros[1].name = json.macros[0].name;
+    });
+    const state = { ...baseState, config, baseline, info: connected };
+    const { result } = callMacroTool(state, 'delete_macro', { name: config.macros[0].name });
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, /more than one macro has that name/i);
+    assert.equal(result.next, undefined);
+});
+
+test('create_macro refuses to exceed the keyboard macro limit', () => {
+    const { config, baseline } = writeFixture(json => {
+        const count = MAX_ALLOWED_MACROS - json.macros.length;
+        json.macros.push(...Array.from({ length: count }, (_, index) => ({
+            ...newMacro, name: `Extra macro ${index}`,
+        })));
+    });
+    const state = { ...baseState, config, baseline, info: connected };
+    const { result } = callMacroTool(state, 'create_macro', newMacro);
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, /no more than 255 macros/i);
+    assert.equal(result.next, undefined);
+});
+
+test('macro writes refuse a configuration with a dangling key-to-macro reference', () => {
+    const { config, baseline } = writeFixture(json => {
+        baseKeys(json)[27] = { keyActionType: 'playMacro', macroIndex: 0, macroArguments: [] };
+    });
+    config.macros.shift();
+    const state = { ...baseState, config, baseline, info: connected };
+    const { result } = callMacroTool(state, 'create_macro', newMacro);
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, /would not serialize/i);
+    assert.equal(result.next, undefined);
+});
+
+test('macro writes require a connected keyboard', () => {
+    const { config, baseline } = writeFixture();
+    const info = { ...connected, connected: false, model: null, firmwareVersion: null };
+    for (const name of ['create_macro', 'update_macro', 'rename_macro', 'delete_macro']) {
+        const { result } = callMacroTool({ ...baseState, config, baseline, info }, name, {});
+        assert.equal(result.isError, true);
+        assert.match(result.content[0].text, /No keyboard is connected/);
+        assert.equal(result.next, undefined);
+    }
+});
+
+test('every MCP tool keeps text action contents hidden in successful and refused replies', () => {
+    const original = 'synthetic-hidden-original 🔑';
+    const replacement = 'synthetic-hidden-replacement';
+    const createdText = 'synthetic-hidden-new';
+    const { config, baseline, abbreviation } = writeFixture(json => {
+        json.macros[0].name = 'Assigned';
+        json.macros[0].macroActions = [{ macroActionType: 'text', text: original }];
+        baseKeys(json)[27] = { keyActionType: 'playMacro', macroIndex: 0, macroArguments: [] };
+    });
+    const textAction = (text: string) => ({ macroActionType: 'text', text });
+    let state = { ...baseState, config, baseline, info: connected, aiTags: [] };
+    const call = (request: McpToolCall, isError = false) => {
+        const result = handleMcpTool(state, request, false);
+        for (const text of [original, replacement, createdText]) {
+            assert.ok(!result.content[0].text.includes(text), `${request.name} exposed text action contents`);
+        }
+        assert.equal(result.isError, isError, request.name);
+        if (result.next) {
+            state = { ...state, ...result.next };
+        }
+        return result.content[0].text;
+    };
+    const location = { keymap: abbreviation, layer: 'base' };
+    call({ name: 'get_device_info' });
+    call({ name: 'list_keymaps' });
+    call({ name: 'get_layer', arguments: location });
+    call({ name: 'list_macros' });
+    call({ name: 'get_macro', arguments: { name: 'Assigned' } });
+    call({ name: 'get_macro_errors' });
+    call({ name: 'set_key_action', arguments: { ...location, moduleId: 0, keyId: 28, action: { keyActionType: 'playMacro', macroIndex: 0 } } });
+    call({ name: 'create_macro', arguments: { name: 'New text macro', macroActions: [textAction(createdText)] } });
+    call({ name: 'update_macro', arguments: { name: 'Assigned', macroActions: [{ macroActionType: original }] } }, true);
+    call({ name: 'update_macro', arguments: { name: 'Assigned', macroActions: [textAction(replacement)] } });
+    call({ name: 'rename_macro', arguments: { name: 'Assigned', newName: 'Renamed' } });
+    call({ name: 'delete_macro', arguments: { name: 'Renamed' } }, true);
+    call({ name: 'delete_macro', arguments: { name: 'New text macro' } });
+    assert.match(call({ name: 'get_unsaved_changes' }), /\[text macro, \d+ characters, hidden\]/);
 });

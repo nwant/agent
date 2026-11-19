@@ -104,8 +104,10 @@ test('the SDK advertises all tools and forwards validated lookup arguments', asy
     await server.start({ port, token: 'test-token', enabled: true });
     const listed = await httpRequest({ port, body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } });
     const tools = JSON.parse(listed.text).result.tools as { name: string; description: string }[];
-    assert.deepEqual(tools.map(tool => tool.name).sort(),
-        ['get_device_info', 'get_layer', 'get_macro', 'get_macro_errors', 'get_unsaved_changes', 'list_keymaps', 'list_macros', 'set_key_action']);
+    assert.deepEqual(tools.map(tool => tool.name).sort(), [
+        'create_macro', 'delete_macro', 'get_device_info', 'get_layer', 'get_macro', 'get_macro_errors', 'get_unsaved_changes',
+        'list_keymaps', 'list_macros', 'rename_macro', 'set_key_action', 'update_macro',
+    ]);
     assert.match(tools.find(tool => tool.name === 'get_unsaved_changes').description, /keymap.*added or removed/i);
     const macroTool = tools.find(tool => tool.name === 'get_macro');
     assert.ok(macroTool);
@@ -138,4 +140,49 @@ test('set_key_action is advertised as a write and forwards numeric key IDs and t
     const params = { name: 'set_key_action', arguments: { keymap: 'QWR', layer: 'base', moduleId: 0, keyId: 'x', action: 'none' } };
     const rejected = await httpRequest({ port, body: { ...toolCall, params } });
     assert.equal((JSON.parse(rejected.text) as { result: McpToolReply }).result.isError, true);
+});
+
+test('macro writes advertise their schemas and forward valid arguments to the renderer', async context => {
+    const port = await availablePort();
+    const server = new AgentMcpServer(async call => ({ content: [{ type: 'text', text: JSON.stringify(call) }] }), unexpectedManual);
+    context.after(() => server.stop());
+    await server.start({ port, token: 'test-token', enabled: true });
+    const listed = await httpRequest({ port, body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } });
+    const tools = JSON.parse(listed.text).result.tools as { name: string; annotations: Record<string, boolean> }[];
+    const macroActions = [{ macroActionType: 'delay', delay: 20 }];
+    for (const params of [
+        { name: 'create_macro', arguments: { name: 'Example', macroActions } },
+        { name: 'update_macro', arguments: { name: 'Example', isPrivate: true } },
+        { name: 'rename_macro', arguments: { name: 'Example', newName: 'Renamed' } },
+        { name: 'delete_macro', arguments: { name: 'Renamed' } },
+    ]) {
+        const tool = tools.find(item => item.name === params.name);
+        assert.ok(tool, params.name);
+        assert.equal(tool.annotations.readOnlyHint, false);
+        assert.equal(tool.annotations.destructiveHint, params.name !== 'create_macro');
+        const called = await httpRequest({ port, body: { ...toolCall, params } });
+        const { result } = JSON.parse(called.text) as { result: McpToolReply };
+        assert.deepEqual(JSON.parse(result.content[0].text), params);
+    }
+
+    for (const params of [
+        { name: 'create_macro', arguments: { name: 1, macroActions } },
+        { name: 'create_macro', arguments: { macroActions } },
+        { name: 'create_macro', arguments: { name: 'Example' } },
+        { name: 'create_macro', arguments: { name: 'Example', macroActions: 'invalid' } },
+        { name: 'create_macro', arguments: { name: 'Example', macroActions: ['invalid'] } },
+        { name: 'update_macro', arguments: { name: 'Example', isLooped: 'true' } },
+        { name: 'update_macro', arguments: { name: 'Example', isPrivate: 1 } },
+        { name: 'update_macro', arguments: { isPrivate: true } },
+        { name: 'update_macro', arguments: { name: 1, isPrivate: true } },
+        { name: 'rename_macro', arguments: { name: 1, newName: 'Renamed' } },
+        { name: 'rename_macro', arguments: { name: 'Example', newName: 1 } },
+        { name: 'rename_macro', arguments: { newName: 'Renamed' } },
+        { name: 'rename_macro', arguments: { name: 'Example' } },
+        { name: 'delete_macro', arguments: { name: 1 } },
+        { name: 'delete_macro', arguments: {} },
+    ]) {
+        const rejected = await httpRequest({ port, body: { ...toolCall, params } });
+        assert.equal((JSON.parse(rejected.text) as { result: McpToolReply }).result.isError, true, JSON.stringify(params));
+    }
 });

@@ -1,10 +1,13 @@
 import {
-    KeyActionHelper, keyActionType, LayerName, macroActionType, NoneAction,
-    type Keymap, type Layer, type McpToolCall, type McpToolReply, type UserConfiguration,
+    KeyActionHelper, keyActionType, LayerName, Macro, MacroActionHelper, macroActionType, MAX_ALLOWED_MACROS, MAX_ALLOWED_MACROS_TOOLTIP, NoneAction,
+    type Keymap, type Layer, type MacroAction, type McpToolCall, type McpToolReply, type UserConfiguration,
 } from 'uhk-common';
 
 import { diffUserConfiguration, type UserConfigurationJson } from './config-diff.js';
+import { generateMacroId, insertItemInNameOrder } from '../util/configuration-items.js';
+import { findMacroKeyAssignments } from '../util/find-macro-key-assignments.js';
 import { parseStatusBuffer } from '../util/status-buffer-parser.js';
+import { isValidName } from '../util/validators.js';
 
 export interface McpDeviceInfo {
     connected: boolean;
@@ -32,9 +35,19 @@ export interface McpWriteResult {
 
 export type McpToolResult = McpToolReply & { next?: McpWriteResult };
 
-class ToolError extends Error {}
+class ToolError extends Error {
+    constructor(message: string, readonly details?: Record<string, unknown>) {
+        super(message);
+    }
+}
 
 const KEY_PRESS_IS_THE_TEST = 'The checks prove the configuration loads, not that it works. Save to keyboard in Agent, then press the key to verify that it works.';
+const AFTER_A_VALID_PROPOSAL = 'Once a proposal passes the checks, they only establish that the configuration loads. Save to keyboard in Agent, then press the key to verify that it works.';
+
+interface WriteResult {
+    value: unknown;
+    next: McpWriteResult;
+}
 
 function findKeymap(config: UserConfiguration, identifier: unknown): Keymap {
     const byAbbreviation = config.keymaps.find(item => item.abbreviation === identifier);
@@ -55,6 +68,17 @@ function findLayer(keymap: Keymap, name: unknown): Layer {
         throw new ToolError('Unknown layer. Use list_keymaps to see available layers.');
     }
     return layer;
+}
+
+function findMacro(config: UserConfiguration, name: unknown, requireUnique = false): Macro {
+    const macros = config.macros.filter(item => item.name === name);
+    if (!macros.length) {
+        throw new ToolError('Unknown macro. Use list_macros to see available names.');
+    }
+    if (requireUnique && macros.length > 1) {
+        throw new ToolError('More than one macro has that name. Give them unique names in Agent first.');
+    }
+    return macros[0];
 }
 
 function requireInfo(state: ToolState): McpDeviceInfo {
@@ -90,13 +114,8 @@ function readTool(state: ToolState, call: McpToolCall): unknown {
                 name: macro.name,
                 actionTypes: macro.macroActions.map(action => action.toJsonObject().macroActionType),
             }));
-        case 'get_macro': {
-            const macro = config.macros.find(item => item.name === call.arguments?.name);
-            if (!macro) {
-                throw new ToolError('Unknown macro. Use list_macros to see available names.');
-            }
-            return macro.toJsonObject();
-        }
+        case 'get_macro':
+            return findMacro(config, call.arguments?.name).toJsonObject();
         case 'get_macro_errors': {
             const { statusText } = state;
             const errors = parseStatusBuffer(statusText).flatMap(({ error }) => error ? [error] : []);
@@ -164,8 +183,27 @@ function requireKeyboard(state: ToolState): void {
     }
 }
 
-function setKeyAction(state: ToolState, args: Record<string, unknown> = {}): { value: unknown; next: McpWriteResult } {
-    requireKeyboard(state);
+function finishWrite(state: ToolState, config: UserConfiguration, { value, summary }: {
+    value: Record<string, unknown>;
+    summary: string;
+}): WriteResult {
+    try {
+        config.recalculateConfigurationLength();
+    } catch {
+        throw new ToolError('The configuration would not serialize, so nothing was changed.');
+    }
+    const aiTags = [...new Set([...(state.aiTags ?? []), ...changedIds(state, config)])];
+    return {
+        value: {
+            ...value,
+            errors: [],
+            summary: `${summary} in Agent's unsaved changes; nothing was written to the keyboard. ${KEY_PRESS_IS_THE_TEST}`,
+        },
+        next: { config, aiTags },
+    };
+}
+
+function setKeyAction(state: ToolState, args: Record<string, unknown>): WriteResult {
     const { config } = state;
     const next = config.clone();
     const keymap = findKeymap(next, args.keymap);
@@ -221,15 +259,7 @@ function setKeyAction(state: ToolState, args: Record<string, unknown> = {}): { v
         throw new ToolError(`Agent did not recognize the value of ${unread.join(', ')}. Use the serializer JSON shape, as get_layer returns it.`);
     }
     module.keyActions = module.keyActions.map((item, index) => index === keyId ? keyAction : item);
-    // Backstop: the checks above catch every failure known to reach here, so no test triggers this one.
-    try {
-        next.recalculateConfigurationLength();
-    } catch (error) {
-        throw new ToolError(`The configuration would not serialize, so the key was not changed: ${error instanceof Error ? error.message : 'unknown error'}.`);
-    }
-
-    const aiTags = [...new Set([...(state.aiTags ?? []), ...changedIds(state, next)])];
-    return {
+    return finishWrite(state, next, {
         value: {
             keymap: keymap.abbreviation,
             layer: LayerName[layer.id],
@@ -237,32 +267,145 @@ function setKeyAction(state: ToolState, args: Record<string, unknown> = {}): { v
             keyId,
             label: state.keyLabel(module.id, keyId),
             action: module.toJsonObject(serialisationInfo, next.macros).keyActions[keyId],
-            errors: [],
-            summary: `Key changed in Agent's unsaved changes; nothing was written to the keyboard. ${KEY_PRESS_IS_THE_TEST}`,
         },
-        next: { config: next, aiTags },
-    };
+        summary: 'Key changed',
+    });
 }
 
-const WRITE_TOOLS: Record<string, (state: ToolState, args?: Record<string, unknown>) => { value: unknown; next: McpWriteResult }> = {
-    set_key_action: setKeyAction,
-};
+function availableMacroName(config: UserConfiguration, name: unknown, except?: Macro): string {
+    if (typeof name !== 'string' || !isValidName(name)) {
+        throw new ToolError('A non-empty macro name is required.');
+    }
+    const trimmed = name.trim();
+    if (config.macros.some(macro => macro !== except && macro.name === trimmed)) {
+        throw new ToolError('A macro with that name already exists. Use a unique name.');
+    }
+    return trimmed;
+}
+
+const NUMERIC_MACRO_ACTION_FIELDS = new Set(['delay', 'modifierMask', 'mouseButtonsMask', 'scancode', 'x', 'y']);
+
+function parseMacroActions(config: UserConfiguration, macroActions: unknown): MacroAction[] {
+    if (!Array.isArray(macroActions)) {
+        throw new ToolError('macroActions must be an array of macro actions in the serializer JSON shape, as get_macro returns it.');
+    }
+    const serialisationInfo = config.getSerialisationInfo();
+    return macroActions.map((supplied: Record<string, unknown>, index) => {
+        try {
+            const action = MacroActionHelper.fromJSONObject(supplied, serialisationInfo);
+            const parsed: Record<string, unknown> = action.toJsonObject();
+            // Check types and round-trip values since binary serialization coerces some invalid inputs.
+            const validFields = Object.entries(parsed).every(([field, value]) => NUMERIC_MACRO_ACTION_FIELDS.has(field)
+                ? Number.isInteger(value)
+                : typeof value === 'string');
+            if (validFields && Object.entries(supplied).every(([field, value]) => parsed[field] === value)) {
+                return action;
+            }
+        } catch {
+            // Serializer errors can include the supplied action contents.
+        }
+        throw new ToolError(`Invalid macro action at position ${index + 1}. Use the serializer JSON shape, as get_macro returns it.`);
+    });
+}
+
+function setMacroFlags(macro: Macro, { isLooped, isPrivate }: Record<string, unknown>): void {
+    if ((isLooped !== undefined && typeof isLooped !== 'boolean') || (isPrivate !== undefined && typeof isPrivate !== 'boolean')) {
+        throw new ToolError('isLooped and isPrivate must be booleans.');
+    }
+    if (typeof isLooped === 'boolean') {
+        macro.isLooped = isLooped;
+    }
+    if (typeof isPrivate === 'boolean') {
+        macro.isPrivate = isPrivate;
+    }
+}
+
+function createMacro(state: ToolState, args: Record<string, unknown>): WriteResult {
+    const next = state.config.clone();
+    if (next.macros.length >= MAX_ALLOWED_MACROS) {
+        throw new ToolError(MAX_ALLOWED_MACROS_TOOLTIP);
+    }
+    const macro = new Macro();
+    macro.name = availableMacroName(next, args.name);
+    macro.isLooped = false;
+    macro.isPrivate = false;
+    setMacroFlags(macro, args);
+    macro.macroActions = parseMacroActions(next, args.macroActions);
+    macro.id = generateMacroId(next.macros);
+    next.macros = insertItemInNameOrder(next.macros, macro);
+    return finishWrite(state, next, { value: { macro: macro.toJsonObject() }, summary: 'Macro created' });
+}
+
+function updateMacro(state: ToolState, args: Record<string, unknown>): WriteResult {
+    const next = state.config.clone();
+    const macro = findMacro(next, args.name, true);
+    const { isLooped, isPrivate, macroActions } = args;
+    if (isLooped === undefined && isPrivate === undefined && macroActions === undefined) {
+        throw new ToolError('Provide macroActions, isLooped or isPrivate to update the macro.');
+    }
+    setMacroFlags(macro, args);
+    if (macroActions !== undefined) {
+        macro.macroActions = parseMacroActions(next, macroActions);
+    }
+    return finishWrite(state, next, { value: { macro: macro.toJsonObject() }, summary: 'Macro updated' });
+}
+
+function renameMacro(state: ToolState, args: Record<string, unknown>): WriteResult {
+    const next = state.config.clone();
+    const macro = findMacro(next, args.name, true);
+    const name = availableMacroName(next, args.newName, macro);
+    if (name !== macro.name) {
+        macro.name = name;
+        next.macros = insertItemInNameOrder(next.macros, macro, item => item !== macro);
+    }
+    return finishWrite(state, next, { value: { macro: macro.toJsonObject() }, summary: 'Macro renamed' });
+}
+
+function deleteMacro(state: ToolState, args: Record<string, unknown>): WriteResult {
+    const { config } = state;
+    const macro = findMacro(config, args.name, true);
+    const assignments = findMacroKeyAssignments(config.keymaps, macro.id);
+    if (assignments.length) {
+        const keys = assignments.map(({ keymapAbbreviation, layerId, moduleId, keyId }) => ({
+            keymap: keymapAbbreviation,
+            layer: LayerName[layerId],
+            moduleId,
+            keyId,
+            label: state.keyLabel(moduleId, keyId),
+        }));
+        throw new ToolError('The macro is still assigned to the listed keys. Clear those assignments before deleting it.', { keys });
+    }
+    const next = config.clone();
+    next.macros = next.macros.filter(item => item.id !== macro.id);
+    return finishWrite(state, next, { value: { name: macro.name, macro: null }, summary: 'Macro deleted' });
+}
+
+const WRITE_TOOLS = new Map<string, (state: ToolState, args: Record<string, unknown>) => WriteResult>([
+    ['set_key_action', setKeyAction],
+    ['create_macro', createMacro],
+    ['update_macro', updateMacro],
+    ['rename_macro', renameMacro],
+    ['delete_macro', deleteMacro],
+]);
 
 export function handleMcpTool(state: ToolState, call: McpToolCall, revealTextMacros = false): McpToolResult {
     let result: unknown;
     let next: McpWriteResult | undefined;
     let isError = false;
-    const write = WRITE_TOOLS[call.name];
+    const write = WRITE_TOOLS.get(call.name);
     try {
         if (write) {
-            ({ value: result, next } = write(state, call.arguments));
+            requireKeyboard(state);
+            ({ value: result, next } = write(state, call.arguments ?? {}));
         } else {
             result = readTool(state, call);
         }
     } catch (error) {
-        result = error instanceof ToolError
+        const message = error instanceof ToolError
             ? error.message
             : write ? 'Could not change the user configuration. Nothing was changed.' : 'Could not read the user configuration.';
+        const text = write ? `${message} ${AFTER_A_VALID_PROPOSAL}` : message;
+        result = error instanceof ToolError && error.details ? { message: text, ...error.details } : text;
         isError = true;
     }
     return { isError, content: [{ type: 'text', text: serializeReply(result, revealTextMacros) }], next };
