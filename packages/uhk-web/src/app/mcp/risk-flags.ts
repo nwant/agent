@@ -17,14 +17,15 @@ const KEY_COMMANDS = new Map([
 ]);
 const TEXT_COMMANDS = new Set(['write', 'writeExpr', 'printStatus']);
 const MACRO_CALLS = new Set(['call', 'exec', 'fork', 'playMacro']);
-const KEYBOARD_COMMANDS = new Set([
-    'set', 'setLedTxt', 'notify', 'resetTrackpoint', 'switchKeymap', 'switchLayer', 'switchKeymapLayer',
-    'toggleLayer', 'toggleKeymapLayer', 'untoggleLayer', 'holdLayer', 'holdLayerMax', 'holdKeymapLayer',
-    'holdKeymapLayerMax', 'overlayKeymap', 'replaceKeymap', 'overlayLayer', 'replaceLayer', 'powerMode',
-    'switchHost', 'unpairHost', 'reconnect', 'reboot', 'resetConfiguration', 'freeze', 'panic', 'zephyr',
-]);
 const LOCKOUT_COMMANDS = new Set(['switchHost', 'unpairHost', 'resetConfiguration', 'freeze', 'panic']);
-const RISK_COMMANDS = new Set([...KEY_COMMANDS.keys(), ...TEXT_COMMANDS, ...MACRO_CALLS, ...KEYBOARD_COMMANDS]);
+const KEYBOARD_CHANGING_COMMANDS = new Set(['set', 'overlayKeymap', 'replaceKeymap', 'powerMode', ...LOCKOUT_COMMANDS]);
+const COMMANDS_AFTER_PREFIX = new Set([
+    ...KEY_COMMANDS.keys(), ...TEXT_COMMANDS, ...MACRO_CALLS, ...KEYBOARD_CHANGING_COMMANDS,
+    // Recognize these commands so their arguments are not mistaken for commands after a conditional.
+    'setLedTxt', 'notify', 'resetTrackpoint', 'switchKeymap', 'switchLayer', 'switchKeymapLayer',
+    'toggleLayer', 'toggleKeymapLayer', 'untoggleLayer', 'holdLayer', 'holdLayerMax', 'holdKeymapLayer',
+    'holdKeymapLayerMax', 'overlayLayer', 'replaceLayer', 'reconnect', 'reboot', 'zephyr',
+]);
 const COMMAND_PREFIX = /^(?:if[A-Z]\w*|if|else|while|suppressMods|suppressKeys|postponeKeys|final|autoRepeat|oneShot)$/;
 const LAUNCHER_SHORTCUTS = [
     { key: 'r', scancode: 21, modifiers: KeyModifiers.leftGui }, // Windows Run
@@ -107,7 +108,7 @@ function flagCommands(source: string, flags: Set<RiskFlag>, heldModifiers: numbe
         const comment = tokens.indexOf('//');
         const words = comment < 0 ? tokens : tokens.slice(0, comment);
         const index = COMMAND_PREFIX.test(words[0])
-            ? words.findIndex(word => RISK_COMMANDS.has(word))
+            ? words.findIndex(word => COMMANDS_AFTER_PREFIX.has(word))
             : 0;
         const command = words[index];
         const args = words.slice(index + 1);
@@ -128,7 +129,7 @@ function flagCommands(source: string, flags: Set<RiskFlag>, heldModifiers: numbe
         if (MACRO_CALLS.has(command) || words.some(word => /^&macroArg\.\d+$/.test(word))) {
             flags.add('cannotBeChecked');
         }
-        if (KEYBOARD_COMMANDS.has(command)) {
+        if (KEYBOARD_CHANGING_COMMANDS.has(command)) {
             flags.add('changesKeyboard');
         }
         const maySuspendInput = command === 'powerMode' && args.some(word => word === 'lock' || word === 'sleep');

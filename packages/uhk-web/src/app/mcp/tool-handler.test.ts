@@ -693,6 +693,38 @@ test('firmware settings changes and smart-macro configuration commands flag chan
     ]);
 });
 
+test('display updates and ordinary layer or keymap switches do not flag a keyboard change', () => {
+    const { config, baseline } = writeFixture();
+    const state = { ...baseState, config, baseline, info: connected };
+    for (const command of [
+        "notify 'Ready'",
+        'ifShift notify set',
+        "setLedTxt 1000 notification 'Ready'",
+        'switchKeymap QWR',
+        'toggleLayer fn',
+        'holdLayer fn',
+        'toggleKeymapLayer QWR fn',
+    ]) {
+        const { result, body } = callMacroTool(state, 'create_macro', {
+            name: 'Example', macroActions: [{ macroActionType: 'command', command }],
+        });
+        assert.equal(result.isError, false, result.content[0].text);
+        assert.deepEqual(body.riskFlags, [], command);
+    }
+});
+
+test('keymap overlays, keymap replacements and power mode commands flag a keyboard change', () => {
+    const { config, baseline } = writeFixture();
+    const state = { ...baseState, config, baseline, info: connected };
+    for (const command of ['overlayKeymap QWR', 'replaceKeymap QWR', 'powerMode wake']) {
+        const { result, body } = callMacroTool(state, 'create_macro', {
+            name: 'Example', macroActions: [{ macroActionType: 'command', command }],
+        });
+        assert.equal(result.isError, false, result.content[0].text);
+        assert.deepEqual(body.riskFlags, ['changesKeyboard'], command);
+    }
+});
+
 test('a command that locks the keyboard flags both the keyboard change and the lockout', () => {
     const { read } = unsavedFixture(json => {
         json.macros.push({
