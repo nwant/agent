@@ -35,6 +35,7 @@ import {
     VERSIONS,
 } from 'uhk-common';
 import { environment } from '../../environments/environment';
+import { getTaggedUnsavedChanges } from '../mcp/risk-flags';
 import {
     AppUpdateNotificationViewModel,
     ConfigSizeState,
@@ -201,6 +202,16 @@ export const getPrevUserConfiguration = createSelector(appState, fromApp.getPrev
 export const runningInElectron = createSelector(appState, fromApp.runningInElectron);
 export const getKeyboardLayout = createSelector(appState, fromApp.getKeyboardLayout);
 export const deviceConfigurationLoaded = createSelector(appState, fromApp.deviceConfigurationLoaded);
+export const isUserConfigLoading = createSelector(appState, state => state.configLoading);
+export const getUnsavedChanges = createSelector(
+    runningInElectron, getKeyboardBaseline, getUserConfiguration, getAiTags,
+    (electron, baseline, config, aiTags) => {
+        if (electron && baseline) {
+            return getTaggedUnsavedChanges(baseline, config.toJsonObject(), aiTags);
+        }
+        return undefined;
+    },
+);
 export const getConfigurationLoadingProgress = createSelector(appState, fromApp.getConfigurationLoadingProgress);
 export const getOperatingSystem = createSelector(appState, fromSelectors.getOperatingSystem);
 export const keypressCapturing = createSelector(appState, fromApp.keypressCapturing);
@@ -482,17 +493,23 @@ export const getAppUpdateNotificationViewModel = createSelector(
         hasUnsavedChanges: saveToKeyboard.showButton,
     })
 );
-export const saveToKeyboardState = createSelector(runningInElectron, saveToKeyboardStateSelector, getOutOfSpaceWaringData,
-    (electron, saveToKeyboard, outOfSpaceWarning) => {
+export const saveToKeyboardState = createSelector(
+    runningInElectron, saveToKeyboardStateSelector, getOutOfSpaceWaringData, isUserConfigLoading,
+    (electron, saveToKeyboard, outOfSpaceWarning, loading) => {
         if (!electron) {
             return initProgressButtonState;
         }
 
         return {
             ...saveToKeyboard,
-            showButton: saveToKeyboard.showButton && !outOfSpaceWarning.show
+            showButton: saveToKeyboard.showButton && !outOfSpaceWarning.show && !loading
         };
     });
+export const showReviewChanges = createSelector(
+    runningInElectron, deviceConfigurationLoaded, getUnsavedChanges, saveToKeyboardStateSelector,
+    (electron, loaded, changes, saveState) => electron && loaded &&
+        (Boolean(saveState.action) || Boolean(changes?.length)),
+);
 export const getEraseBleSettingsButtonStateSelector = createSelector(deviceState, fromDevice.getEraseBleSettingsButtonState);
 export const firstAttemptOfSaveToKeyboard = createSelector(
     runningInElectron,

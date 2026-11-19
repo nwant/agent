@@ -9,6 +9,17 @@ const RISK_FLAGS = ['runsWithoutKeyPress', 'typesIntoHost', 'opensLauncherOrShel
 export type RiskFlag = typeof RISK_FLAGS[number];
 
 export type FlaggedConfigDiffEntry = ConfigDiffEntry & { riskFlags: RiskFlag[] };
+export type UnsavedChange = FlaggedConfigDiffEntry & { aiTagged: boolean };
+
+export function getTaggedUnsavedChanges(
+    baseline: UserConfigurationJson, current: UserConfigurationJson, aiTags: readonly string[],
+): UnsavedChange[] {
+    const tags = new Set(aiTags);
+    return diffUserConfigurationWithRiskFlags(baseline, current).map(entry => ({
+        ...entry,
+        aiTagged: tags.has(entry.id),
+    }));
+}
 
 const EVENT_MACRO_NAME = /^\$on(?:Init|KeymapChange|LayerChange|KeymapLayerChange|CapsLockStateChange|NumLockStateChange|ScrollLockStateChange|Error|Join|Split)(?:\s|$)/;
 

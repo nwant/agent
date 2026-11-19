@@ -1,5 +1,6 @@
-import { ModuleWithProviders, Provider } from '@angular/core';
+import { ModuleWithProviders, Provider, inject } from '@angular/core';
 import { RouterModule, Routes } from '@angular/router';
+import { Store } from '@ngrx/store';
 
 import { deviceRoutes } from './components/device';
 import { addOnRoutes } from './components/add-on';
@@ -23,6 +24,7 @@ import { UhkDeviceBootloaderNotActiveGuard } from './services/uhk-device-bootloa
 import { AgentUpdateNeededGuard } from './services/agent-update-needed-guard.service';
 import { UpdateFirmwarePageComponent } from './pages/update-firmware.page';
 import { UhkUdevGuard } from './services/uhk-device-udev.guard';
+import { runningInElectron } from './store';
 
 const appRoutes: Routes = [
     {
@@ -65,7 +67,13 @@ const appRoutes: Routes = [
             ...deviceRoutes,
             ...keymapRoutes,
             ...macroRoutes,
-            ...addOnRoutes
+            ...addOnRoutes,
+            {
+                path: 'proposed-changes',
+                canMatch: [() => inject(Store).select(runningInElectron)],
+                loadComponent: () => import('./components/proposed-changes/proposed-changes.component')
+                    .then(module => module.ProposedChangesComponent),
+            },
         ]
     },
     {

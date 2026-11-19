@@ -74,11 +74,19 @@
         >
     <fa-icon [icon]="faArrowUp"></fa-icon>
 </button>
-<progress-button class="save-to-keyboard-button"
-                 *ngIf="saveToKeyboardState.showButton"
-                 [@showSaveToKeyboardButton]
-                 [state]="saveToKeyboardState"
-                 (clicked)="clickedOnProgressButton($event)"></progress-button>
+@let showReview = showReviewChanges$ | async;
+@if (showReview || saveToKeyboardState.showButton) {
+    <div class="save-to-keyboard-controls d-flex gap-2 align-items-center" [@showSaveToKeyboardButton]>
+        @if (showReview) {
+            <a class="btn btn-secondary" routerLink="/proposed-changes" routerLinkActive="active"
+               ariaCurrentWhenActive="page">Review changes</a>
+        }
+        @if (saveToKeyboardState.showButton) {
+            <progress-button [state]="saveToKeyboardState"
+                             (clicked)="clickedOnProgressButton($event)"></progress-button>
+        }
+    </div>
+}
 <out-of-space-warning *ngIf="outOfSpaceWarning.show"
                       [@showOutOfSpaceWarning]
                       [state]="outOfSpaceWarning"></out-of-space-warning>

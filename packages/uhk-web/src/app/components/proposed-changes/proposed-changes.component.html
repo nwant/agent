@@ -1,0 +1,76 @@
+<h1>Proposed changes</h1>
+
+@if (review$ | async; as review) {
+    @if (review.entries.length) {
+        <p>Save to keyboard sends all {{ review.entries.length }} unsaved {{ review.entries.length === 1 ? 'change' : 'changes' }}.</p>
+        <ul class="list-unstyled mb-4">
+            @for (entry of review.entries; track entry.change.id) {
+                @let change = entry.change;
+                <li class="border-top py-3">
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                        @if (entry.route) {
+                            <a class="fw-semibold text-break" [routerLink]="entry.route" [queryParams]="entry.query">{{ entry.title }}</a>
+                        } @else {
+                            <span class="fw-semibold text-break">{{ entry.title }}</span>
+                        }
+                        @if (change.type === 'macro' || change.type === 'keymap') {
+                            <span class="small">{{ change.type | titlecase }} {{ change.change }}</span>
+                        }
+                        @if (change.aiTagged) {
+                            <span class="badge text-bg-primary">AI</span>
+                        }
+                        @for (flag of change.riskFlags; track flag) {
+                            <span class="badge text-bg-warning">{{ riskLabels[flag] }}</span>
+                        }
+                    </div>
+                    @if (change.type === 'keyAction' || change.type === 'other') {
+                        @let before = change.type === 'keyAction' ? actionDetails(change.before) : change.before;
+                        @let after = change.type === 'keyAction' ? actionDetails(change.after) : change.after;
+                        @let missing = change.type === 'keyAction' ? 'No key' : 'Not set';
+                        <div class="row gy-2">
+                            <div class="col-md-6">
+                                <div class="small fw-semibold">On keyboard</div>
+                                <pre class="text-wrap text-break mb-0">{{ before === null ? missing : (before | json) }}</pre>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="small fw-semibold">After saving</div>
+                                <pre class="text-wrap text-break mb-0">{{ after === null ? missing : (after | json) }}</pre>
+                            </div>
+                        </div>
+                    } @else if (change.type === 'macro' && change.after; as macro) {
+                        <p class="small mb-2">Looped {{ macro.isLooped ? 'Yes' : 'No' }} · Private {{ macro.isPrivate ? 'Yes' : 'No' }}</p>
+                        @if (macro.macroActions.length) {
+                            <ol class="mb-0">
+                                @for (action of macro.macroActions; track $index) {
+                                    <li class="mb-2">
+                                        <div class="small fw-semibold">{{ action.macroActionType | titlecase }}</div>
+                                        <pre class="overflow-auto mb-0" [textContent]="macroActionText(action)"></pre>
+                                    </li>
+                                }
+                            </ol>
+                        } @else {
+                            <p class="mb-0">This macro has no actions.</p>
+                        }
+                    }
+                    @if (entry.relatedLinks; as links) {
+                        <div class="d-flex flex-wrap gap-2 mt-2">
+                            @for (link of links; track link.label) {
+                                <a [routerLink]="link.route">{{ link.label }}</a>
+                            }
+                        </div>
+                    }
+                </li>
+            }
+        </ul>
+        <button type="button" class="btn btn-outline-danger" (click)="discard()" [disabled]="!(canDiscard$ | async)">
+            Discard all unsaved changes (includes {{ review.aiCount }} AI-tagged {{ review.aiCount === 1 ? 'change' : 'changes' }})
+        </button>
+        @if (loading$ | async) {
+            <span role="status" class="ms-2">Reloading from keyboard…</span>
+        }
+    } @else {
+        <p>No unsaved changes. Agent matches the keyboard.</p>
+    }
+} @else {
+    <p>Agent does not have a keyboard configuration to compare against.</p>
+}

@@ -3,6 +3,8 @@ export type KeyActionJson = Record<string, unknown> | null;
 export interface MacroJson {
     name: string;
     macroActions: Array<Record<string, unknown>>;
+    isLooped?: boolean;
+    isPrivate?: boolean;
 }
 
 /** The parts of the serializer's JSON shape (UserConfiguration.toJsonObject()) that the diff walks. */

@@ -6,7 +6,7 @@ import {
 
 import type { ConfigDiffEntry, UserConfigurationJson } from './config-diff.js';
 import type { FirmwareCommands } from './firmware-commands.js';
-import { diffUserConfigurationWithRiskFlags } from './risk-flags.js';
+import { diffUserConfigurationWithRiskFlags, getTaggedUnsavedChanges } from './risk-flags.js';
 import { generateMacroId, insertItemInNameOrder } from '../util/configuration-items.js';
 import { findMacroKeyAssignments } from '../util/find-macro-key-assignments.js';
 import { parseStatusBuffer } from '../util/status-buffer-parser.js';
@@ -138,11 +138,9 @@ function readTool(state: ToolState, call: McpToolCall): unknown {
             if (!state.baseline) {
                 throw new ToolError("Agent does not know the keyboard's configuration: it has not been read yet, or Agent could not use it. Connect the keyboard, or load its configuration in Agent, and try again.");
             }
-            const aiTags = new Set(state.aiTags);
-            const changes = diffUserConfigurationWithRiskFlags(state.baseline, config.toJsonObject() as UserConfigurationJson).map(entry => ({
+            const changes = getTaggedUnsavedChanges(state.baseline, config.toJsonObject(), state.aiTags || []).map(entry => ({
                 ...entry,
                 ...entry.type === 'keyAction' ? { label: state.keyLabel(entry.moduleId, entry.keyId) } : {},
-                aiTagged: aiTags.has(entry.id),
             }));
             const tagged = changes.filter(entry => entry.aiTagged).length;
             return {

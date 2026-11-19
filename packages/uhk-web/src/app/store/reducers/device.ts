@@ -23,6 +23,7 @@ import { RestoreConfigurationState } from '../../models/restore-configuration-st
 
 import * as App from '../actions/app';
 import * as Device from '../actions/device';
+import { ActionTypes as UserConfigActionTypes } from '../actions/user-config';
 import { ReadConfigSizesReplyAction } from '../actions/device';
 import { getSaveToKeyboardButtonState, initProgressButtonState, ProgressButtonState } from './progress-button-state';
 
@@ -272,6 +273,14 @@ export function reducer(state = initialState, action: Action): State {
                 ...state,
                 modifiedConfigWhileSaved: false,
                 saveToKeyboard: getSaveToKeyboardButtonState()
+            };
+        }
+
+        case UserConfigActionTypes.RememberKeyboardConfiguration: {
+            return {
+                ...state,
+                saveToKeyboard: initProgressButtonState,
+                modifiedConfigWhileSaved: false,
             };
         }
 

@@ -31,7 +31,8 @@ import {
     isStatusBufferErrorHidden,
     getOutOfSpaceWaringData,
     getShowFirmwareUpgradePanel,
-    getSharedConfigChange
+    getSharedConfigChange,
+    showReviewChanges,
 } from './store';
 import { StartLeftHalfPairingAction } from './store/actions/advance-settings.action';
 import { StartDonglePairingAction } from './store/actions/dongle-pairing.action';
@@ -155,6 +156,7 @@ export class MainAppComponent implements OnDestroy {
     private statusBufferSubscription: Subscription;
     private secondSideMenuComponent: unknown;
     private readonly store = inject<Store<AppState>>(Store);
+    readonly showReviewChanges$ = this.store.select(showReviewChanges);
     private readonly route = inject(ActivatedRoute);
     private readonly router = inject(Router);
 

@@ -151,6 +151,9 @@ export function reducer(
             };
         }
 
+        case UserConfigActionTypes.LoadConfigFromDeviceReply:
+            return { ...state, configLoading: false };
+
         case UserConfigActionTypes.LoadConfigFromDevice:
         case UserConfigActionTypes.LoadUserConfig: {
             return {
