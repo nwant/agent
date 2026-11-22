@@ -7,7 +7,8 @@ import {
 import type { ConfigDiffEntry, UserConfigurationJson } from './config-diff.js';
 import type { FirmwareCommands } from './firmware-commands.js';
 import { diffUserConfigurationWithRiskFlags, getTaggedUnsavedChanges } from './risk-flags.js';
-import { hostConnectionsForAi, readSettings, type HostConnectionJson } from './settings.js';
+import { hostConnectionsForAi, readSettings, type HostConnectionJson, type SettingsDevice } from './settings.js';
+import { proposeSettingsUpdate, SettingsValidationError } from './update-settings.js';
 import { generateMacroId, insertItemInNameOrder } from '../util/configuration-items.js';
 import { findKeyAssignments, findMacroKeyAssignments, type MacroKeyAssignment } from '../util/find-macro-key-assignments.js';
 import { parseStatusBuffer } from '../util/status-buffer-parser.js';
@@ -55,6 +56,8 @@ class ToolError extends Error {
 
 const KEY_PRESS_IS_THE_TEST = 'The checks prove the configuration loads, not that it works. Save to keyboard in Agent, then press the key to verify that it works.';
 const AFTER_A_VALID_PROPOSAL = 'Once a proposal passes the checks, they only establish that the configuration loads. Save to keyboard in Agent, then press the key to verify that it works.';
+
+const SETTINGS_SAVE_NOTE = 'Review the proposed settings in Agent, then use Save to keyboard to apply them.';
 
 interface WriteResult {
     value: unknown;
@@ -108,6 +111,20 @@ function requireInfo(state: ToolState): McpDeviceInfo {
     return state.info;
 }
 
+function settingsDevice(state: ToolState): SettingsDevice {
+    const info = requireInfo(state);
+    return info.connected ? { connected: true, deviceId: state.deviceId, model: info.model } : { connected: false };
+}
+
+function requireSettingsGroup(group: unknown): McpSettingsGroupName {
+    const name = MCP_SETTINGS_GROUP_NAMES.find(name => name === group);
+    if (!name) {
+        const supplied = typeof group === 'string' ? ` ${JSON.stringify(group)}` : '';
+        throw new ToolError(`Unknown settings group${supplied}. Use one of: ${MCP_SETTINGS_GROUP_NAMES.join(', ')}.`);
+    }
+    return name;
+}
+
 function readTool(state: ToolState, call: McpToolCall): unknown {
     if (call.name === 'get_device_info') {
         return requireInfo(state);
@@ -150,16 +167,9 @@ function readTool(state: ToolState, call: McpToolCall): unknown {
             };
         }
         case 'get_settings': {
-            const info = requireInfo(state);
+            const device = settingsDevice(state);
             const group = call.arguments?.group;
-            // The server's input schema rejects these too; this covers callers that skip it.
-            if (group !== undefined && !MCP_SETTINGS_GROUP_NAMES.includes(group as McpSettingsGroupName)) {
-                throw new ToolError(`Unknown settings group. Use one of: ${MCP_SETTINGS_GROUP_NAMES.join(', ')}.`);
-            }
-            const device = info.connected
-                ? { connected: true as const, deviceId: state.deviceId, model: info.model }
-                : { connected: false as const };
-            return readSettings(config.toJsonObject() as UserConfigurationJson, device, group as McpSettingsGroupName | undefined);
+            return readSettings(config.toJsonObject(), device, group === undefined ? undefined : requireSettingsGroup(group));
         }
         case 'get_unsaved_changes': {
             if (!state.baseline) {
@@ -219,10 +229,11 @@ function requireKeyboard(state: ToolState): void {
     }
 }
 
-function finishWrite(state: ToolState, config: UserConfiguration, { value, summary, commandCheckNotice = '' }: {
+function finishWrite(state: ToolState, config: UserConfiguration, { value, summary, commandCheckNotice = '', verification = KEY_PRESS_IS_THE_TEST }: {
     value: Record<string, unknown>;
     summary: string;
     commandCheckNotice?: string;
+    verification?: string;
 }): WriteResult {
     try {
         config.recalculateConfigurationLength();
@@ -230,14 +241,14 @@ function finishWrite(state: ToolState, config: UserConfiguration, { value, summa
         throw new ToolError('The configuration would not serialize, so nothing was changed.');
     }
     const written = diffUserConfigurationWithRiskFlags(
-        state.config.toJsonObject() as UserConfigurationJson, config.toJsonObject() as UserConfigurationJson);
+        state.config.toJsonObject(), config.toJsonObject());
     const aiTags = [...new Set([...(state.aiTags ?? []), ...changedIds(written, state.baseline)])];
     return {
         value: {
             ...value,
             errors: [],
             riskFlags: [...new Set(written.flatMap(entry => entry.riskFlags))],
-            summary: `${summary} in Agent's unsaved changes; nothing was written to the keyboard. ${commandCheckNotice}${KEY_PRESS_IS_THE_TEST}`,
+            summary: `${summary} in Agent's unsaved changes; nothing was written to the keyboard. ${commandCheckNotice}${verification}`,
         },
         next: { config, aiTags },
     };
@@ -543,6 +554,16 @@ function setDefaultKeymap(state: ToolState, args: Record<string, unknown>): Writ
     return finishWrite(state, next, { value: keymapReply(keymap), summary: 'Default keymap changed' });
 }
 
+function updateSettings(state: ToolState, args: Record<string, unknown>): WriteResult {
+    const group = requireSettingsGroup(args.group);
+    const proposed = proposeSettingsUpdate({ config: state.config, device: settingsDevice(state), group, values: args.values });
+    return finishWrite(state, proposed.config, {
+        value: { group, values: proposed.values },
+        summary: `Proposed settings for ${group}`,
+        verification: SETTINGS_SAVE_NOTE,
+    });
+}
+
 const WRITE_TOOLS = new Map<string, (state: ToolState, args: Record<string, unknown>) => WriteResult>([
     ['set_key_action', setKeyAction],
     ['create_macro', createMacro],
@@ -553,6 +574,7 @@ const WRITE_TOOLS = new Map<string, (state: ToolState, args: Record<string, unkn
     ['rename_keymap', renameKeymap],
     ['delete_keymap', deleteKeymap],
     ['set_default_keymap', setDefaultKeymap],
+    ['update_settings', updateSettings],
 ]);
 
 export function handleMcpTool(state: ToolState, call: McpToolCall, revealTextMacros = false): McpToolResult {
@@ -568,10 +590,10 @@ export function handleMcpTool(state: ToolState, call: McpToolCall, revealTextMac
             result = readTool(state, call);
         }
     } catch (error) {
-        const message = error instanceof ToolError
+        const message = error instanceof ToolError || error instanceof SettingsValidationError
             ? error.message
             : write ? 'Could not change the user configuration. Nothing was changed.' : 'Could not read the user configuration.';
-        const text = write ? `${message} ${AFTER_A_VALID_PROPOSAL}` : message;
+        const text = write && write !== updateSettings ? `${message} ${AFTER_A_VALID_PROPOSAL}` : message;
         result = error instanceof ToolError && error.details ? { message: text, ...error.details } : text;
         isError = true;
     }
