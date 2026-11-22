@@ -80,14 +80,16 @@ const RUNTIME_NOTE = 'A smart-macro `set` command, for example in $onInit, chang
 
 export type SettingsDevice = { connected: false } | { connected: true; deviceId: number | undefined; model: string | null };
 
-interface HostConnectionJson {
+export interface HostConnectionJson {
     type: string;
     name?: string;
 }
 
-// Every slot in order, since switchHost takes a slot number and pairing starts from an empty slot.
-// Keep only what identifies a host to the user; addresses and pairing data stay out.
-function hostConnections(connections: HostConnectionJson[]): unknown {
+/**
+ * Host connections as AI clients see them: every slot in order, since switchHost takes a slot number and pairing
+ * starts from an empty slot, with only what identifies a host to the user. Addresses and pairing data stay out.
+ */
+export function hostConnectionsForAi(connections: HostConnectionJson[]): unknown {
     return connections.map(({ name, type }) => type === 'Empty' ? { type } : { name, type });
 }
 
@@ -97,7 +99,7 @@ function groupValues(name: McpSettingsGroupName, json: UserConfigurationJson, fi
         return Object.fromEntries(modules.map(module => [module.id, module]));
     }
     return Object.fromEntries(fields.map(field => [field, field === 'hostConnections'
-        ? hostConnections(json[field] as HostConnectionJson[])
+        ? hostConnectionsForAi(json[field] as HostConnectionJson[])
         : json[field]]));
 }
 
