@@ -62,7 +62,7 @@
                 </li>
             }
         </ul>
-        <button type="button" class="btn btn-outline-danger" (click)="discard()" [disabled]="!(canDiscard$ | async)">
+        <button type="button" class="btn btn-outline-danger" (click)="discard()" [disabled]="(canDiscard$ | async) !== true">
             Discard all unsaved changes (includes {{ review.aiCount }} AI-tagged {{ review.aiCount === 1 ? 'change' : 'changes' }})
         </button>
         @if (loading$ | async) {
