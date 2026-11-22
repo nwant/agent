@@ -199,6 +199,46 @@ test('update_settings proposes a partial change in every writable group and tags
     }
 });
 
+test('the settings tools omit module fields absent from configuration format 15.0.0', () => {
+    const group = 'modules';
+    const config = fixture(UHK_80_USER_CONFIG, json => {
+        const touchpad = (json.moduleConfigurations as Array<Record<string, unknown>>).find(module => module.id === 'TouchpadRight');
+        assert.ok(touchpad);
+        Object.assign(touchpad, { angle: 10, touchpadDragStyle: 'DoubleTapAndHold', touchpadDoubleTapAndHoldTimeout: 250 });
+    });
+    const read = getSettings({ config }, { group });
+    assert.equal(read.isError, false, read.text);
+    const before = read.result.groups.modules.values;
+    assert.ok(before?.TouchpadRight);
+
+    const updated = updateSettings(group, { TouchpadRight: { speed: 3.25 } }, { config });
+    assert.equal(updated.result.isError, false, updated.text);
+    const { values: after } = JSON.parse(updated.text) as SettingsUpdateReply;
+    assert.equal((after.TouchpadRight as { speed: number }).speed, 3.25);
+
+    for (const modules of [before, after]) {
+        for (const module of Object.values(modules)) {
+            assert.ok(module && typeof module === 'object');
+            for (const field of ['angle', 'touchpadDragStyle', 'touchpadDoubleTapAndHoldTimeout']) {
+                assert.equal(Object.keys(module).includes(field), false, field);
+            }
+        }
+    }
+});
+
+test('update_settings refuses module fields absent from configuration format 15.0.0', () => {
+    for (const [id, field, value] of [
+        ['TrackballRight', 'angle', 10],
+        ['TouchpadRight', 'touchpadDragStyle', 'DoubleTapAndHold'],
+        ['TouchpadRight', 'touchpadDoubleTapAndHoldTimeout', 250],
+    ] as const) {
+        const { result, text } = updateSettings('modules', { [id]: { speed: 3.25, [field]: value } });
+        assert.equal(result.isError, true, text);
+        assert.ok(text.includes(`modules.${id}.${field} is not an editable setting.`), text);
+        assert.equal(result.next, undefined);
+    }
+});
+
 test('update_settings refuses malformed and out-of-range values atomically and names the invalid setting', () => {
     for (const { group, values, error } of [
         { group: 'typingBehavior', values: { keystrokeDelay: 12, unknownSetting: 0 }, error: /typingBehavior\.unknownSetting/ },

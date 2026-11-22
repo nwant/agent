@@ -1,7 +1,7 @@
 import {
     ADVANCED_SECONDARY_ROLE_CONFIGURATION_FIELD_NAMES, BacklightingMode, BatteryChargingMode, ModuleId, NavigationMode, RgbColor,
     SecondaryRoleAdvancedStrategyTimeoutAction, SecondaryRoleAdvancedStrategyTimeoutType, SecondaryRoleAdvancedStrategyTriggeringEvent,
-    SecondaryRoleStrategy, SIMPLE_ADVANCED_SECONDARY_ROLE_CONFIGURATION_PRESET, TouchpadDragStyle,
+    SecondaryRoleStrategy, SIMPLE_ADVANCED_SECONDARY_ROLE_CONFIGURATION_PRESET,
     type McpSettingsGroupName, type ModuleConfiguration, type UserConfiguration,
 } from 'uhk-common';
 
@@ -131,7 +131,6 @@ const RULES: Record<Exclude<McpSettingsGroupName, 'modules' | 'connections'>, Se
 
 const moduleSpeed = numberInRange(0, 10, false);
 const speedDivisor = numberInRange(1, 100);
-const touchpadTimeout = numberInRange(0, 2000);
 
 const MODULE_RULES: SettingRules<ModuleConfiguration> = {
     navigationModeBaseLayer: navigationMode,
@@ -153,7 +152,6 @@ const MODULE_RULES: SettingRules<ModuleConfiguration> = {
     axisLockSkew: numberInRange(0.1, 1, false),
     invertScrollDirectionX: booleanValue,
     invertScrollDirectionY: booleanValue,
-    angle: numberInRange(-180, 180, false),
 };
 
 const KEY_CLUSTER_RULES: SettingRules<ModuleConfiguration> = {
@@ -164,15 +162,13 @@ const KEY_CLUSTER_RULES: SettingRules<ModuleConfiguration> = {
 const TOUCHPAD_RULES: SettingRules<ModuleConfiguration> = {
     ...MODULE_RULES,
     touchpadPinchZoomDivisor: numberInRange(1, 50),
-    touchpadHoldContinuationTimeout: touchpadTimeout,
+    touchpadHoldContinuationTimeout: numberInRange(0, 2000),
     touchpadPinchToZoom: enumName({
         Zoom: NavigationMode.Zoom,
         ZoomPc: NavigationMode.ZoomPc,
         ZoomMac: NavigationMode.ZoomMac,
         None: NavigationMode.None,
     }),
-    touchpadDragStyle: enumName(TouchpadDragStyle),
-    touchpadDoubleTapAndHoldTimeout: touchpadTimeout,
 };
 
 function parseValues(values: Record<string, unknown>, rules: Record<string, SettingRule>, path: string) {
@@ -194,12 +190,7 @@ function applyModuleValues(config: UserConfiguration, values: Record<string, unk
         }
         const rules = module.id === ModuleId.TouchpadRight ? TOUCHPAD_RULES
             : module.id === ModuleId.KeyClusterLeft ? KEY_CLUSTER_RULES : MODULE_RULES;
-        const updates = parseValues(objectValue(value, path), rules, path);
-        Object.assign(module, updates);
-        if (updates.touchpadDoubleTapAndHoldTimeout !== undefined
-            && !(module.touchpadDragStyle & TouchpadDragStyle.DoubleTapAndHold)) {
-            throw new SettingsValidationError(`${path}.touchpadDoubleTapAndHoldTimeout requires a drag style that enables double-tap and hold.`);
-        }
+        Object.assign(module, parseValues(objectValue(value, path), rules, path));
     }
 }
 
