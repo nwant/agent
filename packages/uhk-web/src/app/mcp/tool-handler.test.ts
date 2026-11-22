@@ -753,10 +753,14 @@ test('smart-macro launcher chords support command prefixes, sequences and modifi
     }
 });
 
-test('computed text and calls into other macros cannot be checked', () => {
+test('computed arguments, interpolated text and macro calls cannot be checked', () => {
     for (const [command, riskFlags] of [
         ['write "value: $macroArg.1"', ['typesIntoHost', 'cannotBeChecked']],
         ['write \'Value: \'"$macroArg.1"', ['typesIntoHost', 'cannotBeChecked']],
+        ['tapKey $macroArg.1', ['typesIntoHost', 'cannotBeChecked']],
+        ['set stickyModifiers $mode', ['cannotBeChecked', 'changesKeyboard']],
+        ['if $condition notify ready', ['cannotBeChecked']],
+        ["notify '$literal' // $comment", []],
         ['&macroArg.1', ['cannotBeChecked']],
         ['call Other macro', ['cannotBeChecked']],
         ['exec Other macro', ['cannotBeChecked']],

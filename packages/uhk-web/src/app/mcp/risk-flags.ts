@@ -135,11 +135,12 @@ function flagCommands(source: string, flags: Set<RiskFlag>, heldModifiers: numbe
         if (TEXT_COMMANDS.has(command)) {
             flags.add('typesIntoHost');
             // Single-quoted text is literal, but a write can concatenate multiple strings.
-            if (command !== 'write' || args.some(text => /(^\$[\w(]|^"(?:\\.|[^"\\])*?\$[\w(])/.test(text))) {
+            if (command !== 'write' || args.some(text => /^"(?:\\.|[^"\\])*?\$[\w(]/.test(text))) {
                 flags.add('cannotBeChecked');
             }
         }
-        if (MACRO_CALLS.has(command) || words.some(word => /^&macroArg\.\d+$/.test(word))) {
+        const hasDynamicArgument = words.slice(1).some(word => word.startsWith('$'));
+        if (hasDynamicArgument || MACRO_CALLS.has(command) || words.some(word => /^&macroArg\.\d+$/.test(word))) {
             flags.add('cannotBeChecked');
         }
         if (KEYBOARD_CHANGING_COMMANDS.has(command)) {
