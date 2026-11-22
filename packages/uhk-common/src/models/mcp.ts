@@ -30,6 +30,11 @@ export interface McpStatus extends McpSettings {
     error: string;
 }
 
+/** get_settings groups, in the order Agent's Device screens list them. */
+export const MCP_SETTINGS_GROUP_NAMES = ['typingBehavior', 'mouseKeySpeed', 'led', 'battery', 'connections', 'modules'] as const;
+
+export type McpSettingsGroupName = typeof MCP_SETTINGS_GROUP_NAMES[number];
+
 export interface McpToolCall {
     name: string;
     arguments?: Record<string, unknown>;

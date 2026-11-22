@@ -1,12 +1,13 @@
 import {
-    CommandMacroAction, KeyActionHelper, keyActionType, LayerName, Macro, MacroActionHelper, macroActionType,
+    CommandMacroAction, KeyActionHelper, MCP_SETTINGS_GROUP_NAMES, keyActionType, LayerName, Macro, MacroActionHelper, macroActionType,
     MAX_ALLOWED_MACROS, MAX_ALLOWED_MACROS_TOOLTIP, NoneAction,
-    type FirmwareRepoInfo, type Keymap, type Layer, type MacroAction, type McpToolCall, type McpToolReply, type UserConfiguration,
+    type FirmwareRepoInfo, type Keymap, type McpSettingsGroupName, type Layer, type MacroAction, type McpToolCall, type McpToolReply, type UserConfiguration,
 } from 'uhk-common';
 
 import type { ConfigDiffEntry, UserConfigurationJson } from './config-diff.js';
 import type { FirmwareCommands } from './firmware-commands.js';
 import { diffUserConfigurationWithRiskFlags, getTaggedUnsavedChanges } from './risk-flags.js';
+import { readSettings } from './settings.js';
 import { generateMacroId, insertItemInNameOrder } from '../util/configuration-items.js';
 import { findMacroKeyAssignments } from '../util/find-macro-key-assignments.js';
 import { parseStatusBuffer } from '../util/status-buffer-parser.js';
@@ -21,6 +22,8 @@ export interface McpDeviceInfo {
 
 interface ToolState {
     info?: McpDeviceInfo;
+    /** The connected device's product id, for settings that only some models have. */
+    deviceId?: number;
     firmware?: FirmwareRepoInfo;
     commandManual?: Required<FirmwareRepoInfo> & { commands: FirmwareCommands };
     config: UserConfiguration;
@@ -133,6 +136,18 @@ function readTool(state: ToolState, call: McpToolCall): unknown {
                 statusText,
                 summary: 'Agent has no cached macro errors. An error-free save indicates that the macro loaded. Save to keyboard in Agent if needed, then press the assigned key to verify that it works.',
             };
+        }
+        case 'get_settings': {
+            const info = requireInfo(state);
+            const group = call.arguments?.group;
+            // The server's input schema rejects these too; this covers callers that skip it.
+            if (group !== undefined && !MCP_SETTINGS_GROUP_NAMES.includes(group as McpSettingsGroupName)) {
+                throw new ToolError(`Unknown settings group. Use one of: ${MCP_SETTINGS_GROUP_NAMES.join(', ')}.`);
+            }
+            const device = info.connected
+                ? { connected: true as const, deviceId: state.deviceId, model: info.model }
+                : { connected: false as const };
+            return readSettings(config.toJsonObject() as UserConfigurationJson, device, group as McpSettingsGroupName | undefined);
         }
         case 'get_unsaved_changes': {
             if (!state.baseline) {

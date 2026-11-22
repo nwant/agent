@@ -5,7 +5,7 @@ import { ConfigureMcp, IpcEvents, MCP_MAX_PORT, MCP_MIN_PORT, McpStatus, McpTool
 import { McpRendererService } from '../../app/services/mcp-renderer.service';
 import { IpcCommonRenderer } from '../../app/services/ipc-common-renderer';
 import {
-    AppState, getAiTags, getMcpDeviceInfo, getUserConfiguration, getDefaultUserConfiguration, getKeyboardBaseline,
+    AppState, getAiTags, getConnectedDevice, getMcpDeviceInfo, getUserConfiguration, getDefaultUserConfiguration, getKeyboardBaseline,
     getLatestStatusBuffer, getRightModuleFirmwareRepoInfo, smartMacroDocState,
 } from '../../app/store';
 import { ApplyAiUserConfigurationAction } from '../../app/store/actions/user-config';
@@ -36,6 +36,7 @@ export class ElectronMcpRendererService extends McpRendererService {
             this.store.pipe(take(1)).subscribe(state => {
                 const { next, ...reply } = handleMcpTool({
                     info: getMcpDeviceInfo(state),
+                    deviceId: getConnectedDevice(state)?.id,
                     firmware: getRightModuleFirmwareRepoInfo(state),
                     get commandManual() { return getCommandManual(state); },
                     config: getUserConfiguration(state),

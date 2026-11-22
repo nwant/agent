@@ -126,10 +126,19 @@ test('the SDK advertises all tools and forwards validated lookup arguments', asy
     const listed = await httpRequest({ port, body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } });
     const tools = JSON.parse(listed.text).result.tools as { name: string; description: string }[];
     assert.deepEqual(tools.map(tool => tool.name).sort(), [
-        'create_macro', 'delete_macro', 'get_device_info', 'get_layer', 'get_macro', 'get_macro_errors', 'get_reference_manual', 'get_unsaved_changes',
+        'create_macro', 'delete_macro', 'get_device_info', 'get_layer', 'get_macro', 'get_macro_errors', 'get_reference_manual', 'get_settings', 'get_unsaved_changes',
         'list_keymaps', 'list_macros', 'rename_macro', 'set_key_action', 'update_macro',
     ]);
     assert.match(tools.find(tool => tool.name === 'get_unsaved_changes').description, /keymap.*added or removed/i);
+    const settingsTool = tools.find(tool => tool.name === 'get_settings') as unknown as {
+        description: string;
+        annotations: { readOnlyHint: boolean };
+        inputSchema: { properties: { group: { enum: string[] } }; required?: string[] };
+    };
+    assert.equal(settingsTool.annotations.readOnlyHint, true);
+    assert.deepEqual(settingsTool.inputSchema.properties.group.enum, ['typingBehavior', 'mouseKeySpeed', 'led', 'battery', 'connections', 'modules']);
+    assert.equal(settingsTool.inputSchema.required?.includes('group') ?? false, false);
+    assert.match(settingsTool.description, /runtime change does not update the saved setting/);
     const macroTool = tools.find(tool => tool.name === 'get_macro');
     assert.ok(macroTool);
     assert.match(macroTool.description, /text typed by `write`.*visible/i);

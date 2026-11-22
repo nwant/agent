@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { createServer, Server } from 'node:http';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import type { FirmwareReferenceManual, McpSettings, McpToolCall, McpToolReply } from 'uhk-common';
+import { MCP_SETTINGS_GROUP_NAMES, type FirmwareReferenceManual, type McpSettings, type McpToolCall, type McpToolReply } from 'uhk-common';
 import { checkMcpAccess } from './access-gate';
 
 const REFERENCE_MANUAL_URI = 'uhk://smart-macro/reference-manual';
@@ -166,6 +166,16 @@ export class AgentMcpServer {
                     destructive: true,
                     idempotent: true,
                 });
+            registerTool('get_settings', [
+                'Read the keyboard settings outside keymaps and macros, including unsaved changes, grouped as Agent\'s Device screens group them:',
+                'typingBehavior, mouseKeySpeed, led, battery, connections and modules (keyed by module id). Omit group to read all groups.',
+                'Values use the serializer JSON shape, as in get_unsaved_changes. Connections list host names and types only.',
+                'A group the connected model lacks is marked available: false.',
+                'Each group names the smart-macro `set` command that changes it while the keyboard runs; such a runtime change does not update the saved setting shown here.',
+            ].join(' '), {
+                readOnly: true,
+                inputSchema: { group: z.enum(MCP_SETTINGS_GROUP_NAMES).optional() },
+            });
             registerRead('get_macro_errors', 'Read cached firmware macro errors and the latest status text, including setStatus output, after saving and pressing the assigned key.');
             void (async () => {
                 try {
