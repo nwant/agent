@@ -80,13 +80,12 @@ export class Macro {
         return this;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    toJsonObject(): any {
+    toJsonObject() {
         return {
             isLooped: this.isLooped,
             isPrivate: this.isPrivate,
             name: this.name,
-            macroActions: this.macroActions.map(macroAction => macroAction.toJsonObject())
+            macroActions: this.macroActions.map<Record<string, unknown>>(macroAction => macroAction.toJsonObject())
         };
     }
 

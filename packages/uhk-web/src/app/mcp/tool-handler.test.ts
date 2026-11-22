@@ -5,6 +5,7 @@ import {
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import type { MacroJson } from './config-diff.js';
 import { readFirmwareCommands } from './firmware-commands.js';
 import { handleMcpTool, type McpDeviceInfo } from './tool-handler.js';
 
@@ -610,16 +611,23 @@ test('an unexpected failure during a write says nothing was changed', () => {
     assert.equal(result.next, undefined);
 });
 
+interface MacroWriteReply {
+    name?: string;
+    macro: MacroJson | null;
+    errors: unknown[];
+    riskFlags: string[];
+    summary: string;
+}
+
 function callMacroTool(state: Parameters<typeof handleMcpTool>[0], name: string, args: Record<string, unknown>) {
     const before = state.config.toJsonObject();
     const result = handleMcpTool(state, { name, arguments: args });
     assert.deepEqual(state.config.toJsonObject(), before, 'the input configuration is not mutated');
-    const body = result.isError ? result.content[0].text : JSON.parse(result.content[0].text);
+    const body = result.isError ? undefined : JSON.parse(result.content[0].text) as MacroWriteReply;
     return { result, body };
 }
 
-function assertMacroWriteReply(reply: unknown) {
-    const body = reply as { errors: unknown[]; summary: string };
+function assertMacroWriteReply(body: MacroWriteReply) {
     assert.deepEqual(body.errors, []);
     assert.match(body.summary, /checks prove the configuration loads, not that it works/i);
     assert.match(body.summary, /save to keyboard/i);
@@ -644,11 +652,11 @@ test('macro writes refuse a command missing from the connected firmware manual b
         ['update_macro', config.macros[0].name, "ifShortcut ' noSuchCommand // ' is a key ID here"],
         ['update_macro', config.macros[0].name, 'final nested: noSuchCommand'],
     ]) {
-        const { result, body } = callMacroTool(state, tool, {
+        const { result } = callMacroTool(state, tool, {
             name, macroActions: [{ macroActionType: 'command', command }],
         });
         assert.equal(result.isError, true, command);
-        assert.match(body, /noSuchCommand.*not in the reference manual.*connected firmware.*v18\.0\.3/);
+        assert.match(result.content[0].text, /noSuchCommand.*not in the reference manual.*connected firmware.*v18\.0\.3/);
         assert.equal(result.next, undefined);
     }
 
@@ -678,7 +686,7 @@ test('macro writes refuse a command missing from the connected firmware manual b
 
 test('macro writes disclose a skipped command check when the renderer has no usable matching manual', () => {
     const { config, baseline } = writeFixture();
-    const changedManual = referenceManual.replaceAll('COMMAND = ', 'INSTRUCTION = ');
+    const changedManual = referenceManual.replace(/COMMAND = /g, 'INSTRUCTION = ');
     const commands = readFirmwareCommands(referenceManual);
     for (const commandManual of [
         undefined,

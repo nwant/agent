@@ -85,8 +85,7 @@ export class Layer {
         return this;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    toJsonObject(serialisationInfo: SerialisationInfo, macros?: Macro[]): any {
+    toJsonObject(serialisationInfo: SerialisationInfo, macros?: Macro[]) {
         return {
             id: LayerName[this.id],
             modules: this.modules.map(module => module.toJsonObject(serialisationInfo, macros))
