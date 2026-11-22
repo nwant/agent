@@ -84,11 +84,10 @@ export class Module {
         return this;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    toJsonObject(serialisationInfo: SerialisationInfo, macros?: Macro[]): any {
+    toJsonObject(serialisationInfo: SerialisationInfo, macros?: Macro[]) {
         return {
             id: this.id,
-            keyActions: this.keyActions.map(keyAction => {
+            keyActions: this.keyActions.map<Record<string, unknown>>(keyAction => {
                 if (keyAction && (macros || !(keyAction instanceof PlayMacroAction || keyAction instanceof SwitchKeymapAction))) {
                     return {
                         ...keyAction.toJsonObject(serialisationInfo, macros),

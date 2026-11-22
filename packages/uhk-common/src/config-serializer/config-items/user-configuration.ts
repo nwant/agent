@@ -388,7 +388,7 @@ export class UserConfiguration implements AdvancedSecondaryRoleConfiguration, Mo
         return this;
     }
 
-    toJsonObject(): any {
+    toJsonObject() {
         return {
             userConfigMajorVersion: this.userConfigMajorVersion,
             userConfigMinorVersion: this.userConfigMinorVersion,

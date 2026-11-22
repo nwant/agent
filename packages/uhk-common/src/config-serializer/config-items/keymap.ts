@@ -86,8 +86,7 @@ export class Keymap {
         return this;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    toJsonObject(serialisationInfo: SerialisationInfo, macros?: Macro[]): any {
+    toJsonObject(serialisationInfo: SerialisationInfo, macros?: Macro[]) {
         return {
             isDefault: this.isDefault,
             abbreviation: this.abbreviation,

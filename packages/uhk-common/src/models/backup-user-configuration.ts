@@ -1,4 +1,3 @@
-import { UserConfiguration } from '../config-serializer/index.js';
 import { BackupUserConfigurationInfo } from './backup-user-configuration-info.js';
 
 export interface BackupUserConfiguration {
@@ -7,5 +6,6 @@ export interface BackupUserConfiguration {
      */
     date?: string;
     info: BackupUserConfigurationInfo;
-    userConfiguration?: UserConfiguration;
+    /** Serialized JSON that may use an older user configuration version. */
+    userConfiguration?: unknown;
 }

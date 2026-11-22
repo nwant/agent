@@ -79,11 +79,13 @@ export class ProposedChangesComponent {
     }
 
     macroActionText(action: MacroJson['macroActions'][number]): string {
-        switch (action.macroActionType) {
-            case macroActionType.TextMacroAction: return String(action.text);
-            case macroActionType.CommandMacroAction: return String(action.command);
-            default: return JSON.stringify(action, null, 2);
+        if (action.macroActionType === macroActionType.TextMacroAction && typeof action.text === 'string') {
+            return action.text;
         }
+        if (action.macroActionType === macroActionType.CommandMacroAction && typeof action.command === 'string') {
+            return action.command;
+        }
+        return JSON.stringify(action, null, 2);
     }
 
     private locateChange(change: UnsavedChange, config: UserConfiguration, defaultUserConfiguration: UserConfiguration): ChangeLocation {
