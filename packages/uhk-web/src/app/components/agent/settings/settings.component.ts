@@ -43,6 +43,7 @@ import {
 import { ToggleAlwaysEnableAdvancedModeAction } from '../../../store/actions/advance-settings.action';
 import { OperatingSystem } from '../../../models/operating-system';
 import { McpRendererService } from '../../../services/mcp-renderer.service';
+import { claudeCodeConnectCommand } from '../../../mcp/connect-command';
 import { FileDialogService } from '../../../services/file-dialog.service';
 
 type ThemeOption = {
@@ -87,6 +88,10 @@ export class SettingsComponent {
     readonly mcpStatus$ = inject(McpRendererService).status$;
     readonly mcpMinPort = MCP_MIN_PORT;
     readonly mcpMaxPort = MCP_MAX_PORT;
+    // The connect command contains the access token, so it starts masked.
+    showMcpToken = false;
+    connectCommandCopied = false;
+    private connectCommandCopiedTimer: ReturnType<typeof setTimeout> | undefined;
     private readonly store = inject<Store<AppState>>(Store);
     private readonly fileDialogService = inject(FileDialogService);
 
@@ -151,6 +156,16 @@ export class SettingsComponent {
 
     configureMcp(changes: Partial<ConfigureMcp>): void {
         this.store.dispatch(new ConfigureMcpAction(changes));
+    }
+
+    connectCommand(port: number, token: string, masked: boolean): string {
+        return claudeCodeConnectCommand(port, token, masked);
+    }
+
+    onConnectCommandCopied(): void {
+        this.connectCommandCopied = true;
+        clearTimeout(this.connectCommandCopiedTimer);
+        this.connectCommandCopiedTimer = setTimeout(() => this.connectCommandCopied = false, 2000);
     }
 
     toggleAlwaysEnableAdvancedMode(enabled: boolean): void {

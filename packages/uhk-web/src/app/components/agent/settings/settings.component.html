@@ -242,7 +242,16 @@
         <ng-container *ngIf="ai.token">
             <label for="ai-access-command">Connect Claude Code:</label>
             <textarea id="ai-access-command" class="form-control" readonly rows="3"
-                      [value]="'claude mcp add --transport http uhk-agent http://127.0.0.1:' + ai.port + '/mcp --header &quot;Authorization: Bearer ' + ai.token + '&quot;'"></textarea>
+                      [value]="connectCommand(ai.port, ai.token, !showMcpToken)"></textarea>
+            <div class="d-flex align-items-center gap-2 mt-2">
+                <button type="button" class="btn btn-default"
+                        ngxClipboard
+                        [cbContent]="connectCommand(ai.port, ai.token, false)"
+                        (cbOnSuccess)="onConnectCommandCopied()">Copy command</button>
+                <button type="button" class="btn btn-default"
+                        (click)="showMcpToken = !showMcpToken">{{ showMcpToken ? 'Hide token' : 'Show token' }}</button>
+                <span *ngIf="connectCommandCopied" class="small text-muted" role="status">Copied</span>
+            </div>
         </ng-container>
         <p *ngIf="ai.error" class="text-danger mt-2" role="alert">{{ ai.error }}</p>
     </ng-container>
