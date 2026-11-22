@@ -7,6 +7,7 @@ import { KeystrokeType, LayerName, macroActionType, ModuleId, UHK_MODULES, type 
 
 import type { KeyActionJson, MacroJson, OtherDiffEntry } from '../../mcp/config-diff';
 import { RISK_FLAG_LABELS } from '../../mcp/risk-flag-labels';
+import { settingsPage } from '../../mcp/settings';
 import type { UnsavedChange } from '../../mcp/risk-flags';
 import { MapperService } from '../../services/mapper.service';
 import {
@@ -146,18 +147,6 @@ export class ProposedChangesComponent {
                 };
             }
         }
-        let page = 'configuration';
-        if (/^mouse(Move|Scroll)|^diagonalSpeedCompensation$/.test(path)) {
-            page = 'mouse-key-speed';
-        } else if (/^(backlighting|perKeyRgb|display|keyBacklight(?!BrightnessCharging))/.test(path)) {
-            page = 'led-settings';
-        } else if (/^(secondaryRole|double[Tt]ap|keystrokeDelay)/.test(path)) {
-            page = 'typing-behavior';
-        } else if (/^(batteryChargingMode|keyBacklightBrightnessCharging)/.test(path)) {
-            page = 'battery-settings';
-        } else if (/^(hostConnections|bluetooth)/.test(path)) {
-            page = 'host-connections';
-        }
-        return { title, route: ['/device', page] };
+        return { title, route: ['/device', settingsPage(path)] };
     }
 }
