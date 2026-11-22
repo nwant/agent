@@ -96,7 +96,12 @@ export class AgentMcpServer {
                     return { content: [{ type: 'text', text: `${firmwareGitRepo} ${firmwareGitTag}\n\n${text}` }] };
                 },
             });
-            const macroManualNote = 'Call get_reference_manual before writing smart-macro commands for the connected firmware.';
+            const macroManualNote = [
+                'Call get_reference_manual before writing smart-macro commands for the connected firmware.',
+                'Known pitfalls: The OLED shows about 24 characters with no scrolling.',
+                'Settings read back as raw values, for example `$battery.chargeLimit` reads as 1 or 0.',
+                '`notify` on an if/else line shows the wrong text on firmware before the fix in UltimateHackingKeyboard/firmware#1668.',
+            ].join(' ');
             registerRead('get_device_info', 'Read the connected keyboard model, firmware version, connection state and physical halves from Agent.');
             registerRead('list_keymaps', 'List current keymap names, abbreviations and layers, including unsaved changes.');
             registerRead('get_layer', 'Read physical key labels and serialized actions. Use a keymap abbreviation or unique name and a layer from list_keymaps.', {
@@ -107,9 +112,6 @@ export class AgentMcpServer {
                 'Read a macro by name. Text macro actions are hidden unless enabled in Agent.',
                 'Smart-macro commands, including text typed by `write`, are visible to the AI client.',
                 macroManualNote,
-                'Known pitfalls: The OLED shows about 24 characters with no scrolling.',
-                'Settings read back as raw values, for example `$battery.chargeLimit` reads as 1 or 0.',
-                '`notify` on an if/else line shows the wrong text on firmware before the fix in UltimateHackingKeyboard/firmware#1668.',
             ].join(' '), {
                 name: z.string(),
             });

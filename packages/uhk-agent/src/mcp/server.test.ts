@@ -133,11 +133,12 @@ test('the SDK advertises all tools and forwards validated lookup arguments', asy
     const macroTool = tools.find(tool => tool.name === 'get_macro');
     assert.ok(macroTool);
     assert.match(macroTool.description, /text typed by `write`.*visible/i);
-    assert.match(macroTool.description, /OLED.*about 24 characters.*no scrolling/i);
-    assert.match(macroTool.description, /raw values.*\$battery\.chargeLimit.*1 or 0/i);
-    assert.match(macroTool.description, /`notify`.*if\/else.*wrong text.*UltimateHackingKeyboard\/firmware#1668/i);
     for (const name of ['get_macro', 'create_macro', 'update_macro']) {
-        assert.match(tools.find(tool => tool.name === name).description, /call get_reference_manual before writing smart-macro commands/i);
+        const { description } = tools.find(tool => tool.name === name);
+        assert.match(description, /call get_reference_manual before writing smart-macro commands/i);
+        assert.match(description, /OLED.*about 24 characters.*no scrolling/i);
+        assert.match(description, /raw values.*\$battery\.chargeLimit.*1 or 0/i);
+        assert.match(description, /`notify`.*if\/else.*wrong text.*UltimateHackingKeyboard\/firmware#1668/i);
     }
     const params = { name: 'get_layer', arguments: { keymap: 'Unsaved', layer: 'fn' } };
     const called = await httpRequest({ port, body: { ...toolCall, params } });
