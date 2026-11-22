@@ -107,9 +107,7 @@ export class KeymapHeaderComponent implements OnChanges, OnDestroy {
     }
 
     editKeymapAbbr(newAbbr: string) {
-        const regexp = this.extraLEDCharactersSupported
-            ? new RegExp(/^[a-zA-Z\d$+\-*/|\\<>?_'",`@={} ]{1,3}$/g)
-            : new RegExp(/^[a-zA-Z\d]{1,3}$/g);
+        const regexp = util.keymapAbbreviationPattern({ extraLedCharacters: this.extraLEDCharactersSupported, lowercase: true });
 
         if (newAbbr.trim().length === 0 || !regexp.test(newAbbr)) {
             this.setAbbreviation();

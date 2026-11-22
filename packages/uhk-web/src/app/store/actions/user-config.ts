@@ -113,7 +113,7 @@ export class PreviewUserConfigurationAction implements Action {
 export class ApplyAiUserConfigurationAction implements Action {
     type = ActionTypes.ApplyAiUserConfiguration;
 
-    constructor(public payload: { userConfiguration: UserConfiguration; aiTags: string[] }) {
+    constructor(public payload: { userConfiguration: UserConfiguration; aiTags: string[]; renamedKeymap?: { from: string; to: string } }) {
     }
 }
 

@@ -126,8 +126,8 @@ test('the SDK advertises all tools and forwards validated lookup arguments', asy
     const listed = await httpRequest({ port, body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } });
     const tools = JSON.parse(listed.text).result.tools as { name: string; description: string }[];
     assert.deepEqual(tools.map(tool => tool.name).sort(), [
-        'create_macro', 'delete_macro', 'get_device_info', 'get_layer', 'get_macro', 'get_macro_errors', 'get_reference_manual', 'get_settings', 'get_unsaved_changes',
-        'list_keymaps', 'list_macros', 'rename_macro', 'set_key_action', 'update_macro',
+        'create_macro', 'delete_keymap', 'delete_macro', 'duplicate_keymap', 'get_device_info', 'get_layer', 'get_macro', 'get_macro_errors', 'get_reference_manual',
+        'get_settings', 'get_unsaved_changes', 'list_keymaps', 'list_macros', 'rename_keymap', 'rename_macro', 'set_default_keymap', 'set_key_action', 'update_macro',
     ]);
     assert.match(tools.find(tool => tool.name === 'get_unsaved_changes').description, /keymap.*added or removed/i);
     const settingsTool = tools.find(tool => tool.name === 'get_settings') as unknown as {
@@ -216,6 +216,48 @@ test('macro writes advertise their schemas and forward valid arguments to the re
         { name: 'rename_macro', arguments: { name: 'Example' } },
         { name: 'delete_macro', arguments: { name: 1 } },
         { name: 'delete_macro', arguments: {} },
+    ]) {
+        const rejected = await httpRequest({ port, body: { ...toolCall, params } });
+        assert.equal((JSON.parse(rejected.text) as { result: McpToolReply }).result.isError, true, JSON.stringify(params));
+    }
+});
+
+test('keymap writes name the abbreviation as the keymap identifier and forward valid arguments', async context => {
+    const port = await availablePort();
+    const server = new AgentMcpServer(async call => ({ content: [{ type: 'text', text: JSON.stringify(call) }] }), unexpectedManual);
+    context.after(() => server.stop());
+    await server.start({ port, token: 'test-token', enabled: true });
+    const listed = await httpRequest({ port, body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } });
+    const tools = JSON.parse(listed.text).result.tools as { name: string; description: string; annotations: Record<string, boolean> }[];
+    assert.match(tools.find(tool => tool.name === 'get_layer').description, /macroName/);
+    for (const params of [
+        { name: 'duplicate_keymap', arguments: { keymap: 'QWR', name: 'Gaming', abbreviation: 'GAM' } },
+        { name: 'rename_keymap', arguments: { keymap: 'GAM', description: 'For games' } },
+        { name: 'set_default_keymap', arguments: { keymap: 'GAM' } },
+        { name: 'delete_keymap', arguments: { keymap: 'GAM' } },
+    ]) {
+        const tool = tools.find(item => item.name === params.name);
+        assert.ok(tool, params.name);
+        assert.match(tool.description, /keymap abbreviation or unique name from list_keymaps/);
+        assert.match(tool.description, /nothing is written to the keyboard/i);
+        assert.equal(tool.annotations.readOnlyHint, false);
+        assert.equal(tool.annotations.destructiveHint, params.name !== 'duplicate_keymap');
+        assert.equal(tool.annotations.idempotentHint, params.name === 'duplicate_keymap' ? undefined : true);
+        const called = await httpRequest({ port, body: { ...toolCall, params } });
+        const { result } = JSON.parse(called.text) as { result: McpToolReply };
+        assert.deepEqual(JSON.parse(result.content[0].text), params);
+    }
+    assert.match(tools.find(tool => tool.name === 'rename_keymap').description, /keys that switch to it keep working/i);
+    assert.match(tools.find(tool => tool.name === 'delete_keymap').description, /default keymap.*other keys switch to/);
+
+    for (const params of [
+        { name: 'duplicate_keymap', arguments: { keymap: 'QWR', name: 'Gaming' } },
+        { name: 'duplicate_keymap', arguments: { keymap: 'QWR', abbreviation: 'GAM' } },
+        { name: 'duplicate_keymap', arguments: { name: 'Gaming', abbreviation: 'GAM' } },
+        { name: 'rename_keymap', arguments: { keymap: 'QWR', name: 1 } },
+        { name: 'rename_keymap', arguments: { name: 'Work' } },
+        { name: 'set_default_keymap', arguments: {} },
+        { name: 'delete_keymap', arguments: { keymap: 1 } },
     ]) {
         const rejected = await httpRequest({ port, body: { ...toolCall, params } });
         assert.equal((JSON.parse(rejected.text) as { result: McpToolReply }).result.isError, true, JSON.stringify(params));
