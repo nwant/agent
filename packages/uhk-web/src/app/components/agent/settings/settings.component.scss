@@ -15,3 +15,25 @@ h1 {
 .macro-grouping-dependent-options--disabled {
     opacity: 0.55;
 }
+
+.ai-access-port {
+    width: 5.75rem;
+}
+
+.ai-access-snippet {
+    position: relative;
+
+    pre {
+        font-size: 0.875rem;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        padding: 0.75rem 3.25rem 0.75rem 0.75rem;
+        height: auto;
+    }
+
+    .ai-access-copy {
+        position: absolute;
+        top: 0.5rem;
+        right: 0.5rem;
+    }
+}

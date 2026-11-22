@@ -214,7 +214,7 @@
 <div class="col-12 mt-3" *ngIf="runningInElectron$ | async">
     <ng-container *ngIf="mcpStatus$ | async as ai">
         <h2 class="h5">AI access</h2>
-        <div class="checkbox d-inline-block mb-0 mt-0">
+        <div class="checkbox mb-0 mt-0">
             <label>
                 <input type="checkbox" [checked]="ai.enabled"
                        (change)="configureMcp({ enabled: $event.target.checked })">
@@ -222,37 +222,87 @@
                 Changes reach the keyboard when you click Save to keyboard.
             </label>
         </div>
-        <p class="small text-muted">Connect an AI client on this computer. Access continues while Agent is in the system tray.</p>
-        <div class="checkbox">
+        <p class="small text-muted mb-2">Connect an AI client on this computer. Access continues while Agent is in the system tray.</p>
+        <div class="checkbox mt-0">
             <label>
                 <input type="checkbox" [checked]="ai.revealTextMacros"
                        (change)="configureMcp({ revealTextMacros: $event.target.checked })">
                 Let AI read text macro contents
             </label>
         </div>
-        <div class="d-flex align-items-center gap-2">
-            <label class="mb-0" for="ai-access-port">Port:</label>
-            <input id="ai-access-port" type="number" [min]="mcpMinPort" [max]="mcpMaxPort" class="form-control w-auto"
-                   [value]="ai.port"
-                   (change)="configureMcp({ port: $event.target.valueAsNumber })">
-            <button type="button" class="btn btn-default" [disabled]="!ai.token"
-                    (click)="configureMcp({ regenerateToken: true })">Regenerate token</button>
-        </div>
-        <p class="small mt-2">Regenerating the token disconnects existing clients. Keep the command private; it contains your access token.</p>
-        <ng-container *ngIf="ai.token">
-            <label for="ai-access-command">Connect Claude Code:</label>
-            <textarea id="ai-access-command" class="form-control" readonly rows="3"
-                      [value]="connectCommand(ai.port, ai.token, !showMcpToken)"></textarea>
-            <div class="d-flex align-items-center gap-2 mt-2">
-                <button type="button" class="btn btn-default"
-                        ngxClipboard
-                        [cbContent]="connectCommand(ai.port, ai.token, false)"
-                        (cbOnSuccess)="onConnectCommandCopied()">Copy command</button>
-                <button type="button" class="btn btn-default"
-                        (click)="showMcpToken = !showMcpToken">{{ showMcpToken ? 'Hide token' : 'Show token' }}</button>
-                <span *ngIf="connectCommandCopied" class="small text-muted" role="status">Copied</span>
+
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3">
+            <div class="btn-group" role="group" aria-label="AI client">
+                <button *ngFor="let client of mcpClients"
+                        type="button"
+                        class="btn"
+                        [class.btn-primary]="mcpClient === client.id"
+                        [class.btn-default]="mcpClient !== client.id"
+                        [attr.aria-pressed]="mcpClient === client.id"
+                        (click)="mcpClient = client.id">{{ client.name }}</button>
             </div>
+            <div class="d-flex align-items-center gap-2">
+                <label class="mb-0" for="ai-access-port">Port</label>
+                <input id="ai-access-port" type="number" [min]="mcpMinPort" [max]="mcpMaxPort"
+                       class="form-control ai-access-port"
+                       [value]="ai.port"
+                       (change)="configureMcp({ port: $event.target.valueAsNumber })">
+                <button type="button" class="btn btn-default ms-2" [disabled]="!ai.token"
+                        ngbTooltip="Connected clients lose access until you give them the new token."
+                        triggers="hover"
+                        container="body"
+                        (click)="configureMcp({ regenerateToken: true })">Regenerate token</button>
+                <button type="button"
+                        class="btn btn-default"
+                        [disabled]="!ai.token"
+                        [ngbTooltip]="showMcpToken ? 'Hide token' : 'Show token'"
+                        [attr.aria-label]="showMcpToken ? 'Hide token' : 'Show token'"
+                        [attr.aria-pressed]="showMcpToken"
+                        triggers="hover"
+                        container="body"
+                        (click)="showMcpToken = !showMcpToken">
+                    <fa-icon [icon]="showMcpToken ? faEyeSlash : faEye" [fixedWidth]="true"></fa-icon>
+                </button>
+            </div>
+        </div>
+
+        <ng-container *ngIf="ai.token">
+            <ng-container *ngIf="mcpClient === 'claudeCode'">
+                <p class="small mt-3 mb-1">Run this in a terminal:</p>
+                <ng-container *ngTemplateOutlet="connectSnippet; context: {
+                    id: 'claudeCode',
+                    shown: connectCommand(ai.port, ai.token, !showMcpToken),
+                    copied: connectCommand(ai.port, ai.token, false)
+                }"></ng-container>
+            </ng-container>
+            <ng-container *ngIf="mcpClient === 'codex'">
+                <p class="small mt-3 mb-1">Add this to <code>~/.codex/config.toml</code>, then restart Codex:</p>
+                <ng-container *ngTemplateOutlet="connectSnippet; context: {
+                    id: 'codex',
+                    shown: codexConfig(ai.port, ai.token, !showMcpToken),
+                    copied: codexConfig(ai.port, ai.token, false)
+                }"></ng-container>
+            </ng-container>
+            <p class="small text-muted mt-1">Keep the token private. After you regenerate it, update the client's configuration.</p>
         </ng-container>
+
+        <ng-template #connectSnippet let-id="id" let-shown="shown" let-copied="copied">
+            <div class="ai-access-snippet">
+                <pre class="form-control font-monospace mb-0">{{ shown }}</pre>
+                <button type="button"
+                        class="btn btn-default btn-sm ai-access-copy"
+                        [ngbTooltip]="copiedSnippet === id ? 'Copied' : 'Copy'"
+                        aria-label="Copy"
+                        triggers="hover"
+                        container="body"
+                        ngxClipboard
+                        [cbContent]="copied"
+                        (cbOnSuccess)="onSnippetCopied(id)">
+                    <fa-icon [icon]="copiedSnippet === id ? faCheck : faCopy" [fixedWidth]="true"></fa-icon>
+                </button>
+            </div>
+        </ng-template>
+        <span class="visually-hidden" role="status">{{ copiedSnippet ? 'Copied to clipboard' : '' }}</span>
         <p *ngIf="ai.error" class="text-danger mt-2" role="alert">{{ ai.error }}</p>
     </ng-container>
 </div>

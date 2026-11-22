@@ -1,6 +1,6 @@
 import { Component, inject } from '@angular/core';
 import { IconDefinition } from '@fortawesome/fontawesome-svg-core';
-import { faCog, faDesktop, faMoon, faSun } from '@fortawesome/free-solid-svg-icons';
+import { faCheck, faCog, faCopy, faDesktop, faEye, faEyeSlash, faMoon, faSun } from '@fortawesome/free-solid-svg-icons';
 import { Store } from '@ngrx/store';
 import { Observable, combineLatest } from 'rxjs';
 import { map, take } from 'rxjs/operators';
@@ -43,7 +43,7 @@ import {
 import { ToggleAlwaysEnableAdvancedModeAction } from '../../../store/actions/advance-settings.action';
 import { OperatingSystem } from '../../../models/operating-system';
 import { McpRendererService } from '../../../services/mcp-renderer.service';
-import { claudeCodeConnectCommand } from '../../../mcp/connect-command';
+import { claudeCodeConnectCommand, codexConnectConfig } from '../../../mcp/connect-command';
 import { FileDialogService } from '../../../services/file-dialog.service';
 
 type ThemeOption = {
@@ -51,6 +51,8 @@ type ThemeOption = {
     text: string;
     icon: IconDefinition;
 };
+
+type McpClient = 'claudeCode' | 'codex';
 
 @Component({
     selector: 'settings',
@@ -68,7 +70,11 @@ export class SettingsComponent {
     appTheme$: Observable<AppTheme>;
     keyLanguage$: Observable<KeyLanguage>;
     isLinux$: Observable<boolean>;
+    faCheck = faCheck;
     faCog = faCog;
+    faCopy = faCopy;
+    faEye = faEye;
+    faEyeSlash = faEyeSlash;
     keyboardHalvesAlwaysJoined$: Observable<boolean>;
     alwaysEnableAdvancedMode$: Observable<boolean>;
     alwaysEnableAdvancedModeSettingVisible$: Observable<boolean>;
@@ -88,10 +94,15 @@ export class SettingsComponent {
     readonly mcpStatus$ = inject(McpRendererService).status$;
     readonly mcpMinPort = MCP_MIN_PORT;
     readonly mcpMaxPort = MCP_MAX_PORT;
-    // The connect command contains the access token, so it starts masked.
+    readonly mcpClients: ReadonlyArray<{ id: McpClient; name: string }> = [
+        { id: 'claudeCode', name: 'Claude Code' },
+        { id: 'codex', name: 'Codex' },
+    ];
+    mcpClient: McpClient = 'claudeCode';
+    // The connect snippets contain the access token, so they start masked.
     showMcpToken = false;
-    connectCommandCopied = false;
-    private connectCommandCopiedTimer: ReturnType<typeof setTimeout> | undefined;
+    copiedSnippet: McpClient | undefined;
+    private copiedSnippetTimer: ReturnType<typeof setTimeout> | undefined;
     private readonly store = inject<Store<AppState>>(Store);
     private readonly fileDialogService = inject(FileDialogService);
 
@@ -162,10 +173,14 @@ export class SettingsComponent {
         return claudeCodeConnectCommand(port, token, masked);
     }
 
-    onConnectCommandCopied(): void {
-        this.connectCommandCopied = true;
-        clearTimeout(this.connectCommandCopiedTimer);
-        this.connectCommandCopiedTimer = setTimeout(() => this.connectCommandCopied = false, 2000);
+    codexConfig(port: number, token: string, masked: boolean): string {
+        return codexConnectConfig(port, token, masked);
+    }
+
+    onSnippetCopied(id: McpClient): void {
+        this.copiedSnippet = id;
+        clearTimeout(this.copiedSnippetTimer);
+        this.copiedSnippetTimer = setTimeout(() => this.copiedSnippet = undefined, 2000);
     }
 
     toggleAlwaysEnableAdvancedMode(enabled: boolean): void {
