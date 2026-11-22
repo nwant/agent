@@ -1,6 +1,6 @@
 {
   "userConfigMajorVersion": 15,
-  "userConfigMinorVersion": 1,
+  "userConfigMinorVersion": 0,
   "userConfigPatchVersion": 0,
   "lastSaveAgentTag": "",
   "lastSaveFirmwareTag": "",
@@ -183,7 +183,6 @@
       "axisLockSkew": 0.5,
       "invertScrollDirectionX": false,
       "invertScrollDirectionY": false,
-      "angle": 0,
       "keyClusterSwapAxes": false,
       "keyClusterInvertHorizontalScrolling": false
     },
@@ -208,12 +207,9 @@
       "axisLockSkew": 0.5,
       "invertScrollDirectionX": false,
       "invertScrollDirectionY": false,
-      "angle": 0,
       "touchpadPinchZoomDivisor": 4,
       "touchpadHoldContinuationTimeout": 0,
-      "touchpadPinchToZoom": "Zoom",
-      "touchpadDragStyle": "EitherTapAndHold",
-      "touchpadDoubleTapAndHoldTimeout": 200
+      "touchpadPinchToZoom": "Zoom"
     },
     {
       "id": "TrackballRight",
@@ -235,8 +231,7 @@
       "axisLockFirstTickSkew": 2,
       "axisLockSkew": 0.5,
       "invertScrollDirectionX": false,
-      "invertScrollDirectionY": false,
-      "angle": 0
+      "invertScrollDirectionY": false
     },
     {
       "id": "TrackpointRight",
@@ -258,8 +253,7 @@
       "axisLockFirstTickSkew": 2,
       "axisLockSkew": 0.5,
       "invertScrollDirectionX": false,
-      "invertScrollDirectionY": false,
-      "angle": 0
+      "invertScrollDirectionY": false
     }
   ],
   "keymaps": [
