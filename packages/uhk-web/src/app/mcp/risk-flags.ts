@@ -200,7 +200,16 @@ function flagKeyAction(action: KeyActionJson, macros: UserConfigurationJson['mac
     }
 }
 
-function flagKeyChange(entry: KeyActionDiffEntry, current: UserConfigurationJson, flags: Set<RiskFlag>): void {
+/** A switch whose target keymap changed abbreviation: the old one is gone and the new one is not on the keyboard. */
+function followsKeymapRename(before: string, after: string, baseline: UserConfigurationJson, current: UserConfigurationJson): boolean {
+    const keymap = (target: string) => target.startsWith('keymap:') ? target.slice('keymap:'.length) : undefined;
+    const [from, to] = [keymap(before), keymap(after)];
+    return from !== undefined && to !== undefined
+        && !current.keymaps.some(item => item.abbreviation === from)
+        && !baseline.keymaps.some(item => item.abbreviation === to);
+}
+
+function flagKeyChange(entry: KeyActionDiffEntry, baseline: UserConfigurationJson, current: UserConfigurationJson, flags: Set<RiskFlag>): void {
     const keymap = current.keymaps.find(item => item.abbreviation === entry.keymap);
     const layer = keymap.layers.find(item => item.id === entry.layer);
     const module = layer?.modules.find(item => item.id === entry.moduleId);
@@ -212,7 +221,7 @@ function flagKeyChange(entry: KeyActionDiffEntry, current: UserConfigurationJson
     if (before || after) {
         flags.add('changesKeyboard');
     }
-    if (before && before !== after && entry.layer === 'base') {
+    if (before && before !== after && entry.layer === 'base' && !followsKeymapRename(before, after, baseline, current)) {
         if (!layer?.modules.some(item => item.keyActions.some(action => switchTarget(action) === before))) {
             flags.add('lockout');
         }
@@ -245,7 +254,7 @@ export function diffUserConfigurationWithRiskFlags(
             flagMacroActions(entry.after, flags);
         }
         if (entry.type === 'keyAction') {
-            flagKeyChange(entry, current, flags);
+            flagKeyChange(entry, baseline, current, flags);
         }
         if (entry.type === 'keymap') {
             flagKeymap(entry, current, flags);

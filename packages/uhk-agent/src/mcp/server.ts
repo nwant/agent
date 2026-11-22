@@ -105,7 +105,10 @@ export class AgentMcpServer {
             ].join(' ');
             registerRead('get_device_info', 'Read the connected keyboard model, firmware version, connection state and physical halves from Agent.');
             registerRead('list_keymaps', 'List current keymap names, abbreviations and layers, including unsaved changes.');
-            registerRead('get_layer', 'Read physical key labels and serialized actions. Use a keymap abbreviation or unique name and a layer from list_keymaps.', {
+            registerRead('get_layer', [
+                'Read physical key labels and serialized actions. Use a keymap abbreviation or unique name and a layer from list_keymaps.',
+                'Play-macro actions also carry macroName, the name of the macro at macroIndex.',
+            ].join(' '), {
                 keymap: z.string(), layer: z.string(),
             });
             registerRead('list_macros', 'List current macro names and their action types.');
@@ -163,6 +166,31 @@ export class AgentMcpServer {
             registerTool('delete_macro',
                 `Delete a macro by name. If it is assigned to keys, Agent refuses and lists those keys. ${macroWriteNote}`, {
                     inputSchema: { name: macroName },
+                    destructive: true,
+                    idempotent: true,
+                });
+            const keymapWriteNote = 'Nothing is written to the keyboard: Agent proposes an unsaved change and returns Agent-computed riskFlags (an empty array means no rule matched). The user reviews it and clicks Save to keyboard in Agent.';
+            const keymapId = z.string().describe('A keymap abbreviation or unique name from list_keymaps.');
+            const abbreviationRule = 'An abbreviation is 1 to 3 uppercase letters or digits, as the keyboard display shows it; newer firmware also allows some symbols.';
+            registerTool('duplicate_keymap',
+                `Copy a keymap, every layer included, under a new unique name and abbreviation. Use a keymap abbreviation or unique name from list_keymaps. ${abbreviationRule} ${keymapWriteNote}`, {
+                    inputSchema: { keymap: keymapId, name: z.string(), abbreviation: z.string() },
+                });
+            registerTool('rename_keymap',
+                `Change a keymap's name, abbreviation or description. Use a keymap abbreviation or unique name from list_keymaps. Keys that switch to it keep working: they follow a new abbreviation. ${abbreviationRule} ${keymapWriteNote}`, {
+                    inputSchema: { keymap: keymapId, name: z.string().optional(), abbreviation: z.string().optional(), description: z.string().optional() },
+                    destructive: true,
+                    idempotent: true,
+                });
+            registerTool('delete_keymap',
+                `Delete a keymap. Use a keymap abbreviation or unique name from list_keymaps. Agent refuses the default keymap, and refuses a keymap that other keys switch to, listing those keys. ${keymapWriteNote}`, {
+                    inputSchema: { keymap: keymapId },
+                    destructive: true,
+                    idempotent: true,
+                });
+            registerTool('set_default_keymap',
+                `Make a keymap the default, the one the keyboard starts in. Use a keymap abbreviation or unique name from list_keymaps. ${keymapWriteNote}`, {
+                    inputSchema: { keymap: keymapId },
                     destructive: true,
                     idempotent: true,
                 });

@@ -5,7 +5,7 @@ import { ConfigureMcp, IpcEvents, MCP_MAX_PORT, MCP_MIN_PORT, McpStatus, McpTool
 import { McpRendererService } from '../../app/services/mcp-renderer.service';
 import { IpcCommonRenderer } from '../../app/services/ipc-common-renderer';
 import {
-    AppState, getAiTags, getConnectedDevice, getMcpDeviceInfo, getUserConfiguration, getDefaultUserConfiguration, getKeyboardBaseline,
+    AppState, extraLEDCharactersSupported, getAiTags, getConnectedDevice, getMcpDeviceInfo, getUserConfiguration, getDefaultUserConfiguration, getKeyboardBaseline,
     getLatestStatusBuffer, getRightModuleFirmwareRepoInfo, smartMacroDocState,
 } from '../../app/store';
 import { ApplyAiUserConfigurationAction } from '../../app/store/actions/user-config';
@@ -37,6 +37,7 @@ export class ElectronMcpRendererService extends McpRendererService {
                 const { next, ...reply } = handleMcpTool({
                     info: getMcpDeviceInfo(state),
                     deviceId: getConnectedDevice(state)?.id,
+                    extraLedCharacters: extraLEDCharactersSupported(state),
                     firmware: getRightModuleFirmwareRepoInfo(state),
                     get commandManual() { return getCommandManual(state); },
                     config: getUserConfiguration(state),
@@ -48,7 +49,7 @@ export class ElectronMcpRendererService extends McpRendererService {
                     }),
                 }, request.call, request.revealTextMacros);
                 if (next) {
-                    this.store.dispatch(new ApplyAiUserConfigurationAction({ userConfiguration: next.config, aiTags: next.aiTags }));
+                    this.store.dispatch(new ApplyAiUserConfigurationAction({ userConfiguration: next.config, aiTags: next.aiTags, renamedKeymap: next.renamedKeymap }));
                 }
                 this.ipcRenderer.send(IpcEvents.mcp.response, { id: request.id, reply });
             });

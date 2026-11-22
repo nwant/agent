@@ -1,7 +1,7 @@
 import {
-    CommandMacroAction, KeyActionHelper, MCP_SETTINGS_GROUP_NAMES, keyActionType, LayerName, Macro, MacroActionHelper, macroActionType,
-    MAX_ALLOWED_MACROS, MAX_ALLOWED_MACROS_TOOLTIP, NoneAction,
-    type FirmwareRepoInfo, type Keymap, type McpSettingsGroupName, type Layer, type MacroAction, type McpToolCall, type McpToolReply, type UserConfiguration,
+    CommandMacroAction, Keymap, KeyActionHelper, MCP_SETTINGS_GROUP_NAMES, keyActionType, LayerName, Macro, MacroActionHelper, macroActionType,
+    MAX_ALLOWED_MACROS, MAX_ALLOWED_MACROS_TOOLTIP, NoneAction, SwitchKeymapAction,
+    type FirmwareRepoInfo, type McpSettingsGroupName, type Layer, type MacroAction, type McpToolCall, type McpToolReply, type UserConfiguration,
 } from 'uhk-common';
 
 import type { ConfigDiffEntry, UserConfigurationJson } from './config-diff.js';
@@ -9,9 +9,9 @@ import type { FirmwareCommands } from './firmware-commands.js';
 import { diffUserConfigurationWithRiskFlags, getTaggedUnsavedChanges } from './risk-flags.js';
 import { hostConnectionsForAi, readSettings, type HostConnectionJson } from './settings.js';
 import { generateMacroId, insertItemInNameOrder } from '../util/configuration-items.js';
-import { findMacroKeyAssignments } from '../util/find-macro-key-assignments.js';
+import { findKeyAssignments, findMacroKeyAssignments, type MacroKeyAssignment } from '../util/find-macro-key-assignments.js';
 import { parseStatusBuffer } from '../util/status-buffer-parser.js';
-import { isValidName } from '../util/validators.js';
+import { isValidName, KEYMAP_ABBREVIATION_SYMBOLS, keymapAbbreviationPattern } from '../util/validators.js';
 
 export interface McpDeviceInfo {
     connected: boolean;
@@ -24,6 +24,8 @@ interface ToolState {
     info?: McpDeviceInfo;
     /** The connected device's product id, for settings that only some models have. */
     deviceId?: number;
+    /** Whether the keyboard display can show the extra characters keymap abbreviations may use. */
+    extraLedCharacters?: boolean;
     firmware?: FirmwareRepoInfo;
     commandManual?: Required<FirmwareRepoInfo> & { commands: FirmwareCommands };
     config: UserConfiguration;
@@ -39,6 +41,8 @@ interface ToolState {
 export interface McpWriteResult {
     config: UserConfiguration;
     aiTags: string[];
+    /** A keymap whose abbreviation the write changed, so Agent's screen can follow it. */
+    renamedKeymap?: { from: string; to: string };
 }
 
 export type McpToolResult = McpToolReply & { next?: McpWriteResult };
@@ -89,6 +93,14 @@ function findMacro(config: UserConfiguration, name: unknown, requireUnique = fal
     return macros[0];
 }
 
+/** Names the macro a play-macro action plays, so a client need not match macroIndex against list_macros. */
+function withMacroName(config: UserConfiguration, action: Record<string, unknown>): Record<string, unknown> {
+    if (action.keyActionType !== keyActionType.PlayMacroAction) {
+        return action;
+    }
+    return { ...action, macroName: config.macros[action.macroIndex as number]?.name ?? null };
+}
+
 function requireInfo(state: ToolState): McpDeviceInfo {
     if (!state.info) {
         throw new ToolError('Agent is still loading keyboard information. Try again shortly.');
@@ -110,9 +122,9 @@ function readTool(state: ToolState, call: McpToolCall): unknown {
             const layer = findLayer(findKeymap(config, call.arguments?.keymap), call.arguments?.layer);
             const serialisationInfo = config.getSerialisationInfo();
             const keys = layer.modules.flatMap(module => {
-                const actions: unknown[] = module.toJsonObject(serialisationInfo, config.macros).keyActions;
+                const actions: Array<Record<string, unknown>> = module.toJsonObject(serialisationInfo, config.macros).keyActions;
                 return actions.map((action, keyId) => ({
-                    moduleId: module.id, keyId, label: state.keyLabel(module.id, keyId), action,
+                    moduleId: module.id, keyId, label: state.keyLabel(module.id, keyId), action: withMacroName(config, action),
                 }));
             });
             return { keys };
@@ -189,13 +201,16 @@ function serializeReply(value: unknown, revealTextMacros: boolean): string {
 
 /**
  * Ids of the unsaved-change entries a write changed, as get_unsaved_changes reports them: an edit inside a keymap
- * that the keyboard doesn't have belongs to that keymap's single entry.
+ * that the keyboard doesn't have, to a key or to the keymap's details, belongs to that keymap's single entry.
  */
 function changedIds(written: ConfigDiffEntry[], baseline: ToolState['baseline']): string[] {
     const onKeyboard = baseline && new Set(baseline.keymaps.map(keymap => keymap.abbreviation));
-    return written.map(entry => entry.type === 'keyAction' && onKeyboard && !onKeyboard.has(entry.keymap)
-        ? `keymap:${entry.keymap}`
-        : entry.id);
+    return written.map(entry => {
+        const keymap = entry.type === 'keyAction' ? entry.keymap
+            : entry.type === 'other' && entry.path.startsWith('keymaps.') ? entry.path.slice('keymaps.'.length)
+                : undefined;
+        return keymap !== undefined && onKeyboard && !onKeyboard.has(keymap) ? `keymap:${keymap}` : entry.id;
+    });
 }
 
 function requireKeyboard(state: ToolState): void {
@@ -245,11 +260,17 @@ function setKeyAction(state: ToolState, args: Record<string, unknown>): WriteRes
     if (!json || typeof json !== 'object' || Array.isArray(json)) {
         throw new ToolError('The action must be a key action in the serializer JSON shape, as get_layer returns it, or "none".');
     }
-    const action = json as Record<string, unknown>;
+    const supplied = json as Record<string, unknown>;
+    const { macroName, ...withoutMacroName } = supplied;
+    const action = supplied.keyActionType === keyActionType.PlayMacroAction ? withoutMacroName : supplied;
     if (action.keyActionType === keyActionType.PlayMacroAction) {
         const { macroIndex } = action;
         if (typeof macroIndex !== 'number' || !Number.isInteger(macroIndex) || !next.macros[macroIndex]) {
             throw new ToolError('Unknown macro index. Use list_macros: macroIndex is the position in that list, from 0.');
+        }
+        // get_layer adds macroName; a stale one means the client's macro list is out of date.
+        if (macroName !== undefined && macroName !== next.macros[macroIndex].name) {
+            throw new ToolError('macroName does not match macroIndex. Use list_macros: macroIndex is the position in that list, from 0.');
         }
     }
     if (action.keyActionType === keyActionType.SwitchKeymapAction
@@ -297,13 +318,14 @@ function setKeyAction(state: ToolState, args: Record<string, unknown>): WriteRes
     });
 }
 
-function availableMacroName(config: UserConfiguration, name: unknown, except?: Macro): string {
+/** A trimmed, non-empty name that no other macro or keymap in items has. */
+function availableName<T extends { name: string }>(items: T[], noun: 'macro' | 'keymap', name: unknown, except?: T): string {
     if (typeof name !== 'string' || !isValidName(name)) {
-        throw new ToolError('A non-empty macro name is required.');
+        throw new ToolError(`A non-empty ${noun} name is required.`);
     }
     const trimmed = name.trim();
-    if (config.macros.some(macro => macro !== except && macro.name === trimmed)) {
-        throw new ToolError('A macro with that name already exists. Use a unique name.');
+    if (items.some(item => item !== except && item.name === trimmed)) {
+        throw new ToolError(`A ${noun} with that name already exists. Use a unique name.`);
     }
     return trimmed;
 }
@@ -370,7 +392,7 @@ function createMacro(state: ToolState, args: Record<string, unknown>): WriteResu
         throw new ToolError(MAX_ALLOWED_MACROS_TOOLTIP);
     }
     const macro = new Macro();
-    macro.name = availableMacroName(next, args.name);
+    macro.name = availableName(next.macros, 'macro', args.name);
     macro.isLooped = false;
     macro.isPrivate = false;
     setMacroFlags(macro, args);
@@ -400,7 +422,7 @@ function updateMacro(state: ToolState, args: Record<string, unknown>): WriteResu
 function renameMacro(state: ToolState, args: Record<string, unknown>): WriteResult {
     const next = state.config.clone();
     const macro = findMacro(next, args.name, true);
-    const name = availableMacroName(next, args.newName, macro);
+    const name = availableName(next.macros, 'macro', args.newName, macro);
     if (name !== macro.name) {
         macro.name = name;
         next.macros = insertItemInNameOrder(next.macros, macro, item => item !== macro);
@@ -408,23 +430,117 @@ function renameMacro(state: ToolState, args: Record<string, unknown>): WriteResu
     return finishWrite(state, next, { value: { macro: macro.toJsonObject() }, summary: 'Macro renamed' });
 }
 
+/** Keys that block a deletion, in the shape both delete refusals return. */
+function refusedKeys(state: ToolState, assignments: MacroKeyAssignment[]): Array<Record<string, unknown>> {
+    return assignments.map(({ keymapAbbreviation, layerId, moduleId, keyId }) => ({
+        keymap: keymapAbbreviation,
+        layer: LayerName[layerId],
+        moduleId,
+        keyId,
+        label: state.keyLabel(moduleId, keyId),
+    }));
+}
+
 function deleteMacro(state: ToolState, args: Record<string, unknown>): WriteResult {
     const { config } = state;
     const macro = findMacro(config, args.name, true);
-    const assignments = findMacroKeyAssignments(config.keymaps, macro.id);
-    if (assignments.length) {
-        const keys = assignments.map(({ keymapAbbreviation, layerId, moduleId, keyId }) => ({
-            keymap: keymapAbbreviation,
-            layer: LayerName[layerId],
-            moduleId,
-            keyId,
-            label: state.keyLabel(moduleId, keyId),
-        }));
+    const keys = refusedKeys(state, findMacroKeyAssignments(config.keymaps, macro.id));
+    if (keys.length) {
         throw new ToolError('The macro is still assigned to the listed keys. Clear those assignments before deleting it.', { keys });
     }
     const next = config.clone();
     next.macros = next.macros.filter(item => item.id !== macro.id);
     return finishWrite(state, next, { value: { name: macro.name, macro: null }, summary: 'Macro deleted' });
+}
+
+function keymapReply({ name, abbreviation, isDefault }: Keymap): Record<string, unknown> {
+    return { keymap: { name, abbreviation, isDefault } };
+}
+
+// The keymap editor's rule, which upper-cases what it accepts. Here a lowercase letter is refused instead, so the
+// abbreviation the client sends is the one keys switch to.
+function availableKeymapAbbreviation(state: ToolState, config: UserConfiguration, abbreviation: unknown, except?: Keymap): string {
+    const extraLedCharacters = Boolean(state.extraLedCharacters);
+    const pattern = keymapAbbreviationPattern({ extraLedCharacters, lowercase: false });
+    const allowed = extraLedCharacters
+        ? `1 to 3 uppercase letters, digits, spaces or any of ${KEYMAP_ABBREVIATION_SYMBOLS.trim()}`
+        : '1 to 3 uppercase letters or digits';
+    if (typeof abbreviation !== 'string' || !abbreviation.trim() || !pattern.test(abbreviation)) {
+        throw new ToolError(`The abbreviation must be ${allowed}, as the keyboard display shows it.`);
+    }
+    if (config.keymaps.some(keymap => keymap !== except && keymap.abbreviation === abbreviation)) {
+        throw new ToolError('A keymap with that abbreviation already exists. Use list_keymaps to see the taken abbreviations.');
+    }
+    return abbreviation;
+}
+
+function duplicateKeymap(state: ToolState, args: Record<string, unknown>): WriteResult {
+    const next = state.config.clone();
+    const source = findKeymap(next, args.keymap);
+    const info = next.getSerialisationInfo();
+    // A serializer round trip, so no layer, module or key action is shared with the source.
+    const copy = new Keymap().fromJsonObject(source.toJsonObject(info, next.macros), next.macros, info);
+    copy.name = availableName(next.keymaps, 'keymap', args.name);
+    copy.abbreviation = availableKeymapAbbreviation(state, next, args.abbreviation);
+    copy.isDefault = false;
+    next.keymaps = insertItemInNameOrder(next.keymaps, copy);
+    return finishWrite(state, next, { value: keymapReply(copy), summary: 'Keymap duplicated' });
+}
+
+function renameKeymap(state: ToolState, args: Record<string, unknown>): WriteResult {
+    const next = state.config.clone();
+    const keymap = findKeymap(next, args.keymap);
+    const { name, abbreviation, description } = args;
+    if (name === undefined && abbreviation === undefined && description === undefined) {
+        throw new ToolError('Provide name, abbreviation or description to rename the keymap.');
+    }
+    if (description !== undefined && typeof description !== 'string') {
+        throw new ToolError('The description must be text.');
+    }
+    const newName = name === undefined ? keymap.name : availableName(next.keymaps, 'keymap', name, keymap);
+    const newAbbreviation = abbreviation === undefined ? keymap.abbreviation : availableKeymapAbbreviation(state, next, abbreviation, keymap);
+    const oldAbbreviation = keymap.abbreviation;
+    Object.assign(keymap, { name: newName, abbreviation: newAbbreviation, description: description ?? keymap.description });
+    if (newAbbreviation !== oldAbbreviation) {
+        // Keymap switches name their target by abbreviation. Unlike the editor, this includes the keymap's own keys.
+        next.keymaps = next.keymaps.map(item => item.renameKeymap(oldAbbreviation, newAbbreviation));
+    }
+    const renamed = next.keymaps.find(item => item.abbreviation === newAbbreviation);
+    next.keymaps = insertItemInNameOrder(next.keymaps, renamed, item => item !== renamed);
+    const result = finishWrite(state, next, { value: keymapReply(renamed), summary: 'Keymap renamed' });
+    if (newAbbreviation !== oldAbbreviation) {
+        result.next.renamedKeymap = { from: oldAbbreviation, to: newAbbreviation };
+    }
+    return result;
+}
+
+function deleteKeymap(state: ToolState, args: Record<string, unknown>): WriteResult {
+    const { config } = state;
+    const keymap = findKeymap(config, args.keymap);
+    if (keymap.isDefault) {
+        throw new ToolError('This is the default keymap, which the keyboard starts in. Make another keymap the default with set_default_keymap first.');
+    }
+    // Its own keys go with it, so only keys in other keymaps block the deletion.
+    const keys = refusedKeys(state, findKeyAssignments(config.keymaps.filter(item => item !== keymap),
+        action => action instanceof SwitchKeymapAction && action.keymapAbbreviation === keymap.abbreviation));
+    if (keys.length) {
+        throw new ToolError('Other keys switch to this keymap. Change those keys before deleting it.', { keys });
+    }
+    const next = config.clone();
+    next.keymaps = next.keymaps.filter(item => item.abbreviation !== keymap.abbreviation);
+    return finishWrite(state, next, {
+        value: { name: keymap.name, abbreviation: keymap.abbreviation, keymap: null },
+        summary: 'Keymap deleted',
+    });
+}
+
+function setDefaultKeymap(state: ToolState, args: Record<string, unknown>): WriteResult {
+    const next = state.config.clone();
+    const keymap = findKeymap(next, args.keymap);
+    for (const item of next.keymaps) {
+        item.isDefault = item === keymap;
+    }
+    return finishWrite(state, next, { value: keymapReply(keymap), summary: 'Default keymap changed' });
 }
 
 const WRITE_TOOLS = new Map<string, (state: ToolState, args: Record<string, unknown>) => WriteResult>([
@@ -433,6 +549,10 @@ const WRITE_TOOLS = new Map<string, (state: ToolState, args: Record<string, unkn
     ['update_macro', updateMacro],
     ['rename_macro', renameMacro],
     ['delete_macro', deleteMacro],
+    ['duplicate_keymap', duplicateKeymap],
+    ['rename_keymap', renameKeymap],
+    ['delete_keymap', deleteKeymap],
+    ['set_default_keymap', setDefaultKeymap],
 ]);
 
 export function handleMcpTool(state: ToolState, call: McpToolCall, revealTextMacros = false): McpToolResult {

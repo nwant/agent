@@ -1,4 +1,4 @@
-import { Keymap, LayerName, PlayMacroAction } from 'uhk-common';
+import { KeyAction, Keymap, LayerName, PlayMacroAction } from 'uhk-common';
 
 export interface MacroKeyAssignment {
     keymapAbbreviation: string;
@@ -9,6 +9,11 @@ export interface MacroKeyAssignment {
 }
 
 export function findMacroKeyAssignments(keymaps: Keymap[], macroId: number): MacroKeyAssignment[] {
+    return findKeyAssignments(keymaps, keyAction => keyAction instanceof PlayMacroAction && keyAction.macroId === macroId);
+}
+
+/** Every key, in every keymap and layer, whose action matches. */
+export function findKeyAssignments(keymaps: Keymap[], matches: (keyAction: KeyAction) => boolean): MacroKeyAssignment[] {
     const assignments: MacroKeyAssignment[] = [];
 
     for (const keymap of keymaps) {
@@ -17,7 +22,7 @@ export function findMacroKeyAssignments(keymaps: Keymap[], macroId: number): Mac
                 for (let keyId = 0; keyId < module.keyActions.length; keyId++) {
                     const keyAction = module.keyActions[keyId];
 
-                    if (!(keyAction instanceof PlayMacroAction) || keyAction.macroId !== macroId) {
+                    if (!matches(keyAction)) {
                         continue;
                     }
 

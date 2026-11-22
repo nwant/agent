@@ -216,7 +216,14 @@ function reduceConfiguration(state: State, action: ConfigurationAction): State {
             newState.newerUserConfiguration = undefined;
             if (isAiWrite) {
                 // Keymap edits depend on the selected keymap, so a proposed change keeps the user's selection.
-                newState.aiTags = (action as UserConfig.ApplyAiUserConfigurationAction).payload.aiTags;
+                const { aiTags, renamedKeymap } = (action as UserConfig.ApplyAiUserConfigurationAction).payload;
+                newState.aiTags = aiTags;
+                if (renamedKeymap && newState.selectedKeymapAbbr === renamedKeymap.from) {
+                    newState.selectedKeymapAbbr = renamedKeymap.to;
+                } else if (!newState.userConfiguration.keymaps.some(keymap => keymap.abbreviation === newState.selectedKeymapAbbr)) {
+                    // A deleted keymap falls back to the default.
+                    newState.selectedKeymapAbbr = undefined;
+                }
                 if (newState.selectedMacroId !== undefined && !newState.userConfiguration.getMacro(newState.selectedMacroId)) {
                     newState.selectedMacroId = undefined;
                     newState.selectedMacroAction = undefined;
