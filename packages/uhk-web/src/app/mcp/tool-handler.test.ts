@@ -347,6 +347,24 @@ test('get_unsaved_changes lists keymap details and settings as other changes, ig
     assert.deepEqual([changes[1].before, changes[1].after], [speed, speed + 1]);
 });
 
+test('get_unsaved_changes lists host connection names and types and never their addresses', () => {
+    const { read } = unsavedFixture(json => {
+        json.hostConnections[1] = { type: 'BLE', address: '11:22:33:44:55:66', switchover: true, name: 'Tablet' };
+    }, json => {
+        json.hostConnections[1] = { type: 'BLE', address: 'a1:b2:c3:d4:e5:f6', switchover: false, name: 'Phone' };
+    });
+    const { reply, body } = read();
+    const [entry] = body.changes;
+    assert.equal(entry.path, 'hostConnections');
+    assert.deepEqual(entry.before[1], { name: 'Phone', type: 'BLE' });
+    assert.deepEqual(entry.after[1], { name: 'Tablet', type: 'BLE' });
+    assert.equal(entry.after.length, UHK_80_USER_CONFIG.hostConnections.length);
+    const text = reply.content[0].text;
+    assert.equal(text.includes('a1:b2:c3:d4:e5:f6'), false);
+    assert.equal(text.includes('11:22:33:44:55:66'), false);
+    assert.equal(/address|switchover/i.test(text), false);
+});
+
 test('get_unsaved_changes reports a duplicated keymap as one added entry without its keys', () => {
     const { read } = unsavedFixture(json => {
         json.keymaps.push({ ...structuredClone(json.keymaps[0]), abbreviation: 'NEW', name: 'New', isDefault: false });

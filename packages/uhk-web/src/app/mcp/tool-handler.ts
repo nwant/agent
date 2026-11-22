@@ -7,7 +7,7 @@ import {
 import type { ConfigDiffEntry, UserConfigurationJson } from './config-diff.js';
 import type { FirmwareCommands } from './firmware-commands.js';
 import { diffUserConfigurationWithRiskFlags, getTaggedUnsavedChanges } from './risk-flags.js';
-import { readSettings } from './settings.js';
+import { hostConnectionsForAi, readSettings, type HostConnectionJson } from './settings.js';
 import { generateMacroId, insertItemInNameOrder } from '../util/configuration-items.js';
 import { findMacroKeyAssignments } from '../util/find-macro-key-assignments.js';
 import { parseStatusBuffer } from '../util/status-buffer-parser.js';
@@ -156,6 +156,10 @@ function readTool(state: ToolState, call: McpToolCall): unknown {
             const changes = getTaggedUnsavedChanges(state.baseline, config.toJsonObject(), state.aiTags || []).map(entry => ({
                 ...entry,
                 ...entry.type === 'keyAction' ? { label: state.keyLabel(entry.moduleId, entry.keyId) } : {},
+                ...entry.type === 'other' && entry.path === 'hostConnections' ? {
+                    before: hostConnectionsForAi(entry.before as HostConnectionJson[]),
+                    after: hostConnectionsForAi(entry.after as HostConnectionJson[]),
+                } : {},
             }));
             const tagged = changes.filter(entry => entry.aiTagged).length;
             return {
