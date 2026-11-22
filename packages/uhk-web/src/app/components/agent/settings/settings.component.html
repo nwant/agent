@@ -218,7 +218,8 @@
             <label>
                 <input type="checkbox" [checked]="ai.enabled"
                        (change)="configureMcp({ enabled: $event.target.checked })">
-                Allow AI clients to read keyboard information
+                Allow AI clients to read keyboard information and propose key and macro changes.
+                Changes reach the keyboard when you click Save to keyboard.
             </label>
         </div>
         <p class="small text-muted">Connect an AI client on this computer. Access continues while Agent is in the system tray.</p>
