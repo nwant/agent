@@ -139,7 +139,7 @@ function flagCommands(source: string, flags: Set<RiskFlag>, heldModifiers: numbe
                 flags.add('cannotBeChecked');
             }
         }
-        const hasDynamicArgument = words.slice(1).some(word => word.startsWith('$'));
+        const hasDynamicArgument = args.some(word => word.startsWith('$'));
         if (hasDynamicArgument || MACRO_CALLS.has(command) || words.some(word => /^&macroArg\.\d+$/.test(word))) {
             flags.add('cannotBeChecked');
         }
