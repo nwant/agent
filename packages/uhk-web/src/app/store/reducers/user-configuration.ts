@@ -129,7 +129,8 @@ type ConfigurationAction = AppActions.Actions | KeymapActions.Actions | MacroAct
 export function reducer(state = initialState, action: ConfigurationAction): State {
     const next = reduceConfiguration(state, action);
     const { aiTags, keyboardBaseline, userConfiguration } = next;
-    if (userConfiguration === state.userConfiguration || !keyboardBaseline || !aiTags.length) {
+    const configurationUnchanged = userConfiguration === state.userConfiguration && keyboardBaseline === state.keyboardBaseline;
+    if (configurationUnchanged || !keyboardBaseline || !aiTags.length) {
         return next;
     }
     const remaining = pruneAiTags(aiTags, keyboardBaseline, userConfiguration.toJsonObject() as UserConfigurationJson);
@@ -359,7 +360,6 @@ function reduceConfiguration(state: State, action: ConfigurationAction): State {
                 newPairedDevicesAdding: false,
                 newPairedDevices: [],
                 keyboardBaseline: (action as DeviceActions.SaveToKeyboardSuccessAction).payload,
-                aiTags: [],
             };
         }
 
