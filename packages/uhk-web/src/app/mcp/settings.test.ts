@@ -1,4 +1,4 @@
-import { UHK_60_USER_CONFIG, UHK_80_USER_CONFIG, UHK_DEVICE_IDS, UserConfiguration } from 'uhk-common';
+import { UHK_60_USER_CONFIG, UHK_80_USER_CONFIG, UHK_DEVICE_IDS, UserConfiguration, type McpSettingsGroupName } from 'uhk-common';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -120,7 +120,7 @@ test('get_settings asks the caller to retry while Agent is still loading, and re
     assert.match(getSettings({ info: undefined }).text, /still loading/);
     const unknown = getSettings({}, { group: 'backlight' });
     assert.equal(unknown.isError, true);
-    assert.match(unknown.text, /Unknown settings group. Use one of: typingBehavior, mouseKeySpeed, led, battery, connections, modules/);
+    assert.match(unknown.text, /Unknown settings group "backlight". Use one of: typingBehavior, mouseKeySpeed, led, battery, connections, modules/);
 });
 
 test('get_settings lists host connection names and types and never their addresses', () => {
@@ -136,6 +136,160 @@ test('get_settings lists host connection names and types and never their address
     assert.equal(text.includes(address), false);
     assert.equal(text.includes('11:22:33:44:55:66'), false);
     assert.equal(/address|switchover/i.test(text), false);
+});
+
+
+interface SettingsUpdateReply {
+    group: McpSettingsGroupName;
+    values: Record<string, unknown>;
+    errors: unknown[];
+    riskFlags: string[];
+    summary: string;
+}
+
+function updateSettings(group: unknown, values: unknown, overrides: Partial<Parameters<typeof handleMcpTool>[0]> = {}) {
+    const config = overrides.config ?? fixture();
+    const baseline = config.toJsonObject();
+    const state = { keyLabel, statusText: '', info: uhk80, deviceId: UHK_DEVICE_IDS.UHK80_RIGHT, config, baseline, ...overrides };
+    const result = handleMcpTool(state, { name: 'update_settings', arguments: { group, values } });
+    assert.deepEqual(config.toJsonObject(), baseline, 'the original configuration stays unchanged');
+    return { result, state, text: result.content[0].text };
+}
+
+test('update_settings proposes a partial change in every writable group and tags its unsaved diff', () => {
+    const tests = [
+        { group: 'typingBehavior', values: { keystrokeDelay: 12 }, paths: ['keystrokeDelay'] },
+        { group: 'mouseKeySpeed', values: { mouseMoveInitialSpeed: 19, mouseMoveAxisSkew: 1.25 }, paths: ['mouseMoveAxisSkew', 'mouseMoveInitialSpeed'] },
+        { group: 'led', values: { displayBrightness: 150, backlightingNoneActionColor: { r: 30, g: 20, b: 10 } }, paths: ['backlightingNoneActionColor', 'displayBrightness'] },
+        { group: 'battery', values: { batteryChargingMode: 'Stationary', keyBacklightBrightnessChargingDefault: 75 }, paths: ['batteryChargingMode', 'keyBacklightBrightnessChargingDefault'] },
+        { group: 'modules', values: { TrackballRight: { speed: 3.25 }, TouchpadRight: { navigationModeFnLayer: 'Scroll' } }, paths: ['moduleConfigurations'] },
+    ] as const;
+    for (const { group, values, paths } of tests) {
+        const { result, state, text } = updateSettings(group, values);
+        assert.equal(result.isError, false, text);
+        assert.ok(result.next);
+        const body = JSON.parse(text) as SettingsUpdateReply;
+        assert.equal(body.group, group);
+        assert.deepEqual(body.errors, []);
+        assert.deepEqual(body.riskFlags, ['changesKeyboard']);
+        assert.match(body.summary, /unsaved changes.*Save to keyboard/);
+
+        const pending = { ...state, ...result.next };
+        const before = getSettings(state, { group }).result.groups[group].values;
+        const after = getSettings(pending, { group }).result.groups[group].values;
+        const expected: Record<string, unknown> = { ...before, ...values };
+        if (group === 'modules') {
+            for (const [id, patch] of Object.entries(values)) {
+                expected[id] = { ...(before[id] as object), ...patch };
+            }
+        }
+        assert.deepEqual(body.values, after);
+        assert.deepEqual(after, expected);
+
+        const unsaved = handleMcpTool(pending, { name: 'get_unsaved_changes' });
+        const { changes } = JSON.parse(unsaved.content[0].text) as {
+            changes: Array<{ path: string; type: string; aiTagged: boolean; riskFlags: string[] }>;
+        };
+        assert.deepEqual(changes.map(entry => entry.path).sort(), paths);
+        for (const entry of changes) {
+            assert.equal(entry.type, 'other');
+            assert.equal(entry.aiTagged, true);
+            assert.deepEqual(entry.riskFlags, ['changesKeyboard']);
+        }
+    }
+});
+
+test('update_settings refuses malformed and out-of-range values atomically and names the invalid setting', () => {
+    for (const { group, values, error } of [
+        { group: 'typingBehavior', values: { keystrokeDelay: 12, unknownSetting: 0 }, error: /typingBehavior\.unknownSetting/ },
+        { group: 'typingBehavior', values: { keystrokeDelay: 51 }, error: /keystrokeDelay.*0 to 50/ },
+        { group: 'typingBehavior', values: { secondaryRoleAdvancedStrategyTriggerFromSameHalf: 'true' }, error: /secondaryRoleAdvancedStrategyTriggerFromSameHalf.*boolean/ },
+        { group: 'mouseKeySpeed', values: { mouseMoveInitialSpeed: 2.5 }, error: /mouseMoveInitialSpeed.*integer/ },
+        { group: 'mouseKeySpeed', values: { mouseScrollAxisSkew: Infinity }, error: /mouseScrollAxisSkew.*0\.1 to 10/ },
+        { group: 'battery', values: { batteryChargingMode: '0' }, error: /batteryChargingMode.*Full, Stationary/ },
+        { group: 'battery', values: { keyBacklightBrightnessChargingDefault: 101 }, error: /keyBacklightBrightnessChargingDefault.*0 to 100/ },
+        { group: 'led', values: { displayFadeOutTimeout: 3601 }, error: /displayFadeOutTimeout.*0 to 3600/ },
+        { group: 'led', values: { backlightingMode: 'ConstantRGB' }, error: /backlightingMode.*FunctionalBacklighting, PerKeyBacklighting/ },
+        { group: 'led', values: { backlightingNoneActionColor: { r: -1, g: 0, b: 0 } }, error: /backlightingNoneActionColor\.r.*0 to 255/ },
+        { group: 'led', values: { backlightingNoneActionColor: { red: 1 } }, error: /backlightingNoneActionColor\.red/ },
+        { group: 'modules', values: { TrackballRight: { speed: 3 }, TouchpadRight: { touchpadPinchToZoom: 'Cursor' } }, error: /TouchpadRight\.touchpadPinchToZoom/ },
+        { group: 'modules', values: { TrackpointRight: { keyClusterSwapAxes: true } }, error: /TrackpointRight\.keyClusterSwapAxes/ },
+        { group: 'modules', values: { TrackballRight: { speed: -1 } }, error: /TrackballRight\.speed.*0 to 10/ },
+        { group: 'modules', values: { Left: {} }, error: /Unknown module modules\.Left/ },
+        { group: 'led', values: null, error: /values must be an object/ },
+        { group: 'unknown', values: {}, error: /Unknown settings group/ },
+    ]) {
+        const { result, text } = updateSettings(group, values);
+        assert.equal(result.isError, true, text);
+        assert.match(text, error);
+        assert.equal(result.next, undefined);
+    }
+});
+
+test('update_settings refuses UHK 80 values on other models and omits them from otherwise valid LED replies', () => {
+    const state = { config: fixture(UHK_60_USER_CONFIG), info: { ...uhk80, model: 'UHK 60 v2' }, deviceId: UHK_DEVICE_IDS.UHK60V2_RIGHT };
+    for (const [group, field, value] of [
+        ['battery', 'batteryChargingMode', 'Stationary'],
+        ['led', 'displayBrightnessBattery', 100],
+    ] as const) {
+        const { result, text } = updateSettings(group, { [field]: value }, state);
+        assert.equal(result.isError, true);
+        assert.ok(text.includes(`${group}.${field} is only available on UHK 80. Current model: UHK 60 v2.`));
+        assert.equal(result.next, undefined);
+    }
+
+    const { result, text } = updateSettings('led', { displayBrightness: 150 }, state);
+    assert.equal(result.isError, false, text);
+    const { values } = JSON.parse(text) as SettingsUpdateReply;
+    assert.equal(values.displayBrightness, 150);
+    assert.equal(values.displayBrightnessBattery, undefined);
+});
+
+test('update_settings refuses connections and keeps host details out of other write replies', () => {
+    const config = fixture(UHK_80_USER_CONFIG, json => {
+        (json.hostConnections as unknown[])[1] = { type: 'BLE', address: 'a1:b2:c3:d4:e5:f6', switchover: true, name: 'Test host' };
+    });
+    const refused = updateSettings('connections', { bluetoothAlwaysAdvertise: true }, { config });
+    assert.equal(refused.result.isError, true);
+    assert.match(refused.text, /connections is read-only/);
+    assert.equal(refused.result.next, undefined);
+
+    const wrongGroup = updateSettings('led', { hostConnections: [] }, { config });
+    assert.equal(wrongGroup.result.isError, true);
+    assert.match(wrongGroup.text, /led.hostConnections/);
+    assert.equal(wrongGroup.result.next, undefined);
+
+    const accepted = updateSettings('led', { displayBrightness: 150 }, { config });
+    assert.equal(accepted.result.isError, false, accepted.text);
+    assert.deepEqual(accepted.result.next.config.toJsonObject().hostConnections, config.toJsonObject().hostConnections);
+    for (const { text } of [refused, wrongGroup, accepted]) {
+        assert.doesNotMatch(text, /a1:b2:c3:d4:e5:f6|switchover|Test host/);
+    }
+});
+
+test('update_settings preserves omitted typing fields and refuses changes the Simple preset would reset', () => {
+    const values = { secondaryRoleAdvancedStrategyTimeout: 750 };
+    const refused = updateSettings('typingBehavior', values);
+    assert.equal(refused.result.isError, true);
+    assert.match(refused.text, /secondaryRoleAdvancedStrategyTimeout.*Simple preset.*Advanced/);
+
+    const accepted = updateSettings('typingBehavior', { secondaryRoleStrategy: 'Advanced', ...values });
+    assert.equal(accepted.result.isError, false, accepted.text);
+    const { config } = accepted.result.next;
+    const read = config.toJsonObject();
+    assert.equal(read.secondaryRoleStrategy, 'Advanced');
+    assert.equal(read.secondaryRoleAdvancedStrategyTimeout, 750);
+    assert.equal(read.secondaryRoleAdvancedStrategyMinimumHoldTime, accepted.state.config.secondaryRoleAdvancedStrategyMinimumHoldTime);
+    const simple = updateSettings('typingBehavior', { secondaryRoleStrategy: 'Simple' }, { config });
+    assert.equal(simple.result.isError, true);
+    assert.match(simple.text, /secondaryRoleAdvancedStrategyTimeout/);
+});
+
+test('update_settings enables the per-key color data required by per-key backlighting', () => {
+    const { result, text } = updateSettings('led', { backlightingMode: 'PerKeyBacklighting' });
+    assert.equal(result.isError, false, text);
+    assert.equal(result.next.config.perKeyRgbPresent, true);
+    assert.equal(result.next.config.toJsonObject().backlightingMode, 'PerKeyBacklighting');
 });
 
 test('each set command hint names commands in the firmware reference manual', () => {

@@ -80,6 +80,10 @@ const RUNTIME_NOTE = 'A smart-macro `set` command, for example in $onInit, chang
 
 export type SettingsDevice = { connected: false } | { connected: true; deviceId: number | undefined; model: string | null };
 
+export function isUhk80(device: SettingsDevice): boolean {
+    return device.connected && device.deviceId === UHK_80_DEVICE.id;
+}
+
 export interface HostConnectionJson {
     type: string;
     name?: string;
@@ -93,7 +97,14 @@ export function hostConnectionsForAi(connections: HostConnectionJson[]): unknown
     return connections.map(({ name, type }) => type === 'Empty' ? { type } : { name, type });
 }
 
-function groupValues(name: McpSettingsGroupName, json: UserConfigurationJson, fields: readonly string[]): Record<string, unknown> {
+function hiddenFields(group: SettingsGroup, device: SettingsDevice): readonly string[] {
+    return device.connected && !isUhk80(device) ? group.uhk80Fields ?? [] : [];
+}
+
+export function settingsGroupValues(name: McpSettingsGroupName, json: UserConfigurationJson, device: SettingsDevice): Record<string, unknown> {
+    const group = SETTINGS_GROUPS[name];
+    const hidden = hiddenFields(group, device);
+    const fields = group.fields.filter(field => !hidden.includes(field));
     if (name === 'modules') {
         const modules = json.moduleConfigurations as Array<{ id: string }>;
         return Object.fromEntries(modules.map(module => [module.id, module]));
@@ -104,20 +115,20 @@ function groupValues(name: McpSettingsGroupName, json: UserConfigurationJson, fi
 }
 
 export function readSettings(json: UserConfigurationJson, device: SettingsDevice, group?: McpSettingsGroupName): unknown {
-    const isUhk80 = device.connected && device.deviceId === UHK_80_DEVICE.id;
     const groups = Object.fromEntries((group ? [group] : MCP_SETTINGS_GROUP_NAMES).map(name => {
-        const { fields, uhk80Fields = [], uhk80Only, setCommand } = SETTINGS_GROUPS[name];
+        const settings = SETTINGS_GROUPS[name];
+        const { uhk80Fields = [], uhk80Only, setCommand } = settings;
         const modelName = device.connected && device.model || 'the connected keyboard';
         if (uhk80Only && !device.connected) {
             return [name, { available: 'unknown', reason: 'No keyboard is connected, so Agent cannot tell whether this model has these settings. They exist on the UHK 80 only.', setCommand }];
         }
-        if (uhk80Only && !isUhk80) {
+        if (uhk80Only && !isUhk80(device)) {
             return [name, { available: false, reason: `Not available on ${modelName}.` }];
         }
-        const hidden = device.connected && !isUhk80 ? uhk80Fields : [];
+        const hidden = hiddenFields(settings, device);
         const entry: Record<string, unknown> = {
             available: true,
-            values: groupValues(name, json, fields.filter(field => !hidden.includes(field))),
+            values: settingsGroupValues(name, json, device),
             setCommand,
         };
         if (hidden.length) {

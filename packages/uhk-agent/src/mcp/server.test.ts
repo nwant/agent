@@ -127,7 +127,7 @@ test('the SDK advertises all tools and forwards validated lookup arguments', asy
     const tools = JSON.parse(listed.text).result.tools as { name: string; description: string }[];
     assert.deepEqual(tools.map(tool => tool.name).sort(), [
         'create_macro', 'delete_keymap', 'delete_macro', 'duplicate_keymap', 'get_device_info', 'get_layer', 'get_macro', 'get_macro_errors', 'get_reference_manual',
-        'get_settings', 'get_unsaved_changes', 'list_keymaps', 'list_macros', 'rename_keymap', 'rename_macro', 'set_default_keymap', 'set_key_action', 'update_macro',
+        'get_settings', 'get_unsaved_changes', 'list_keymaps', 'list_macros', 'rename_keymap', 'rename_macro', 'set_default_keymap', 'set_key_action', 'update_macro', 'update_settings',
     ]);
     assert.match(tools.find(tool => tool.name === 'get_unsaved_changes').description, /keymap.*added or removed/i);
     const settingsTool = tools.find(tool => tool.name === 'get_settings') as unknown as {
@@ -150,6 +150,32 @@ test('the SDK advertises all tools and forwards validated lookup arguments', asy
         assert.match(description, /`notify`.*if\/else.*wrong text.*UltimateHackingKeyboard\/firmware#1668/i);
     }
     const params = { name: 'get_layer', arguments: { keymap: 'Unsaved', layer: 'fn' } };
+    const called = await httpRequest({ port, body: { ...toolCall, params } });
+    const { result } = JSON.parse(called.text) as { result: McpToolReply };
+    assert.deepEqual(JSON.parse(result.content[0].text), params);
+});
+
+test('update_settings is advertised as an unsaved write and forwards a partial settings object', async context => {
+    const port = await availablePort();
+    const server = new AgentMcpServer(async call => ({ content: [{ type: 'text', text: JSON.stringify(call) }] }), unexpectedManual);
+    context.after(() => server.stop());
+    await server.start({ port, token: 'test-token', enabled: true });
+    const listed = await httpRequest({ port, body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } });
+    const tool = (JSON.parse(listed.text).result.tools as Array<{
+        name: string;
+        description: string;
+        annotations: Record<string, boolean>;
+        inputSchema: { properties: { group: { enum: string[] } }; required: string[] };
+    }>).find(item => item.name === 'update_settings');
+    assert.ok(tool);
+    assert.equal(tool.annotations.readOnlyHint, false);
+    assert.equal(tool.annotations.idempotentHint, true);
+    assert.deepEqual(tool.inputSchema.properties.group.enum, ['typingBehavior', 'mouseKeySpeed', 'led', 'battery', 'connections', 'modules']);
+    assert.deepEqual(tool.inputSchema.required, ['group', 'values']);
+    assert.match(tool.description, /Prefer update_settings over.*set.*\$onInit/);
+    assert.match(tool.description, /Save to keyboard/);
+
+    const params = { name: 'update_settings', arguments: { group: 'modules', values: { TrackballRight: { speed: 2.25 } } } };
     const called = await httpRequest({ port, body: { ...toolCall, params } });
     const { result } = JSON.parse(called.text) as { result: McpToolReply };
     assert.deepEqual(JSON.parse(result.content[0].text), params);

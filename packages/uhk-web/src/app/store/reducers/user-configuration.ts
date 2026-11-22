@@ -218,6 +218,9 @@ function reduceConfiguration(state: State, action: ConfigurationAction): State {
                 // Keymap edits depend on the selected keymap, so a proposed change keeps the user's selection.
                 const { aiTags, renamedKeymap } = (action as UserConfig.ApplyAiUserConfigurationAction).payload;
                 newState.aiTags = aiTags;
+                if (userConfig.backlightingMode !== state.userConfiguration.backlightingMode) {
+                    newState.selectedBacklightingColorIndex = -1;
+                }
                 if (renamedKeymap && newState.selectedKeymapAbbr === renamedKeymap.from) {
                     newState.selectedKeymapAbbr = renamedKeymap.to;
                 } else if (!newState.userConfiguration.keymaps.some(keymap => keymap.abbreviation === newState.selectedKeymapAbbr)) {

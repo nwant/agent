@@ -204,6 +204,15 @@ export class AgentMcpServer {
                 readOnly: true,
                 inputSchema: { group: z.enum(MCP_SETTINGS_GROUP_NAMES).optional() },
             });
+            registerTool('update_settings', [
+                'Propose persistent changes to typingBehavior, mouseKeySpeed, led, battery or modules. Prefer update_settings over smart-macro `set` commands in $onInit for persistent changes.',
+                'Use values from get_settings in the serializer JSON shape and send only the fields you want to change. For modules, send objects keyed by module ID with just the settings to edit.',
+                'Use the Advanced secondaryRoleStrategy when editing advanced typing settings. Legacy fields and derived configuration metadata are read-only. Manage connections, pairing and Bluetooth in Agent.',
+                'Review the AI-tagged proposal in Agent and use Save to keyboard to apply it.',
+            ].join(' '), {
+                inputSchema: { group: z.enum(MCP_SETTINGS_GROUP_NAMES), values: z.record(z.string(), z.unknown()) },
+                idempotent: true,
+            });
             registerRead('get_macro_errors', 'Read cached firmware macro errors and the latest status text, including setStatus output, after saving and pressing the assigned key.');
             void (async () => {
                 try {
