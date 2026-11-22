@@ -1,6 +1,6 @@
 # AI access preview
 
-This branch of Agent lets an AI coding assistant, such as Claude Code or Codex, read your UHK configuration and propose key and macro changes. Nothing reaches the keyboard until you review the proposed changes in Agent and click **Save to keyboard**. The assistant talks to Agent through an MCP server (Model Context Protocol, the standard way AI assistants connect to tools) that runs inside Agent on your own computer.
+This branch of Agent lets an AI coding assistant, such as Claude Code or Codex, read your UHK configuration and propose changes to keys, keymaps, macros, and settings. Nothing reaches the keyboard until you review the proposed changes in Agent and click **Save to keyboard**. The assistant talks to Agent through an MCP server (Model Context Protocol, the standard way AI assistants connect to tools) that runs inside Agent on your own computer.
 
 This is a preview build from a fork, not an official Agent release. It has been tested end to end on a UHK 80 with firmware v18.0.3 on macOS. Other models, including the UHK 60 v2, should work because the feature uses the same Agent code for every model, but they have not been tested.
 
@@ -38,8 +38,12 @@ The server listens only on this computer (127.0.0.1), on port 53417 unless you c
 
 ## How a change works
 
-1. The assistant reads your setup with `list_keymaps`, `get_layer`, `list_macros` and `get_macro`, and the smart-macro reference manual for your firmware version with `get_reference_manual`.
-2. It proposes changes with `set_key_action`, `create_macro`, `update_macro`, `rename_macro` or `delete_macro`. These change only Agent's unsaved configuration.
+1. The assistant reads your keymaps with `list_keymaps` and `get_layer`, your macros with `list_macros` and `get_macro`, and your settings with `get_settings`. It can also read the smart-macro manual for your firmware with `get_reference_manual`.
+2. It proposes changes in Agent:
+   - Change a key with `set_key_action`.
+   - Manage keymaps with `duplicate_keymap`, `rename_keymap`, `delete_keymap`, or `set_default_keymap`.
+   - Manage macros with `create_macro`, `update_macro`, `rename_macro`, or `delete_macro`.
+   - Change settings with `update_settings`. Settings changes also go through **Review changes** and **Save to keyboard**.
 3. In Agent, click **Review changes**. Changes the assistant made are tagged as AI changes, macro text is shown in full, and Agent flags risky ones: macros that run without a key press (such as `$onInit`), type into your computer, open a launcher or shell, or that Agent cannot check.
 4. Click **Save to keyboard**. Changes that run without a key press or open a launcher or shell need a second confirmation.
 5. Press the key. If a macro fails, the assistant can read the firmware's error and `setStatus` output with `get_macro_errors` and propose a fix.
