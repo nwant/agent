@@ -45,6 +45,18 @@ test('flagged changes require review if the presenter is absent, unavailable, or
     assert.equal(await approve(), 'reviewRequired');
 });
 
+test('confirmation from a replaced presenter requires a new review even when the configuration is current', async () => {
+    const service = new SaveConfirmationService();
+    const original = new Subject<boolean>();
+    service.registerReview(() => original);
+    const approval = firstValueFrom(service.authorize(pending, of(true)));
+
+    service.registerReview(() => of(true));
+    original.next(true);
+    assert.equal(await approval, 'reviewRequired');
+    assert.equal(await firstValueFrom(service.authorize(pending, of(true))), 'approved');
+});
+
 test('one explicit response applies to one current request', async () => {
     const service = new SaveConfirmationService();
     const response = new Subject<boolean>();
