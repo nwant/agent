@@ -59,11 +59,12 @@ export class AgentMcpServer {
                 contents: [{ uri: REFERENCE_MANUAL_URI, mimeType: REFERENCE_MANUAL_MIME_TYPE, text: (await this.readReferenceManual()).text }],
             }));
             const registerTool = (name: string, description: string, {
-                inputSchema, readOnly = false, destructive = false, run = args => this.request({ name, arguments: args }),
+                inputSchema, readOnly = false, destructive = false, idempotent = false, run = args => this.request({ name, arguments: args }),
             }: {
                 inputSchema: z.ZodRawShape | z.ZodObject;
                 readOnly?: boolean;
                 destructive?: boolean;
+                idempotent?: boolean;
                 run?: (args: Record<string, unknown>) => Promise<McpToolReply>;
             }) => {
                 mcp.registerTool(name, {
@@ -73,7 +74,7 @@ export class AgentMcpServer {
                         readOnlyHint: readOnly,
                         destructiveHint: destructive,
                         openWorldHint: false,
-                        ...!readOnly ? { idempotentHint: true } : {},
+                        ...(idempotent ? { idempotentHint: true } : {}),
                     },
                 }, async (args: Record<string, unknown>) => {
                     try {
@@ -130,6 +131,7 @@ export class AgentMcpServer {
                 'Returns Agent-computed riskFlags for the change. An empty array means no rule matched.',
                 'Passing the checks proves the configuration loads, not that it works: the user must save and press the key.',
             ].join(' '), {
+                idempotent: true,
                 inputSchema: {
                     keymap: z.string(),
                     layer: z.string(),
@@ -150,16 +152,19 @@ export class AgentMcpServer {
                 `Update a macro by name. Supply at least one of macroActions, isLooped or isPrivate. Omitted fields are kept. macroActions replaces the entire action list. Supply the actual replacement text for text actions, whose contents Agent can keep hidden in replies. ${macroManualNote} ${macroWriteNote}`, {
                     inputSchema: { name: macroName, macroActions: macroActions.optional(), ...macroFlags },
                     destructive: true,
+                    idempotent: true,
                 });
             registerTool('rename_macro',
                 `Rename a macro by name and keep its existing key assignments. ${macroWriteNote}`, {
                     inputSchema: { name: macroName, newName: macroName },
                     destructive: true,
+                    idempotent: true,
                 });
             registerTool('delete_macro',
                 `Delete a macro by name. If it is assigned to keys, Agent refuses and lists those keys. ${macroWriteNote}`, {
                     inputSchema: { name: macroName },
                     destructive: true,
+                    idempotent: true,
                 });
             registerRead('get_macro_errors', 'Read cached firmware macro errors and the latest status text, including setStatus output, after saving and pressing the assigned key.');
             void (async () => {

@@ -185,6 +185,7 @@ test('macro writes advertise their schemas and forward valid arguments to the re
         assert.ok(tool, params.name);
         assert.equal(tool.annotations.readOnlyHint, false);
         assert.equal(tool.annotations.destructiveHint, params.name !== 'create_macro');
+        assert.equal(tool.annotations.idempotentHint, params.name === 'create_macro' ? undefined : true);
         const called = await httpRequest({ port, body: { ...toolCall, params } });
         const { result } = JSON.parse(called.text) as { result: McpToolReply };
         assert.deepEqual(JSON.parse(result.content[0].text), params);
