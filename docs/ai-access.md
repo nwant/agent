@@ -8,7 +8,8 @@ This is a preview build from a fork, not an official Agent release. It has been 
 
 - A UHK running firmware v18.0.x. If Agent shows an **Update firmware** page when you connect, use it: it flashes v18.0.3, which this build is made for.
 - Node.js 24.18.1 or newer, below 25, with npm 11.13 or newer. The main README still says Node.js 20; the build refuses older versions.
-- `libusb`. On macOS: `brew install libusb libusb-compat`. On Debian-based Linux: `apt-get install libusb-dev libudev-dev g++`.
+  Install [nvm](https://github.com/nvm-sh/nvm) and run `nvm install 24`.
+- `libusb`. On macOS, run `xcode-select --install` first if the Xcode Command Line Tools are missing. Then run `brew install libusb libusb-compat`. On Debian-based Linux: `apt-get install libusb-dev libudev-dev g++`.
 - Claude Code or Codex.
 
 ## Build and run
@@ -30,7 +31,7 @@ Quit any other copy of Agent first: only one copy can talk to the keyboard. On L
 2. Tick **Allow AI clients to read keyboard information and propose key and macro changes**.
 3. Choose **Claude Code** or **Codex** and click the copy button in the corner of the box. The copy contains your access token even while the eye button keeps it hidden on screen.
 4. Connect:
-   - **Claude Code:** paste the command into a terminal and run it, then start a new Claude Code session. A session that was already running may not pick up the new server.
+   - **Claude Code:** paste the command into a terminal and run it. Keep it out of the assistant’s chat because it contains your access token. Then start a new Claude Code session so it picks up the new server.
    - **Codex:** paste the entry into `~/.codex/config.toml` and restart Codex.
 5. Ask the assistant to call `get_device_info`. It should report your keyboard model and firmware version.
 
