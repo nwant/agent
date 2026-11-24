@@ -28,7 +28,7 @@ Quit any other copy of Agent first: only one copy can talk to the keyboard. On L
 ## Connect your assistant
 
 1. In Agent, open **Settings** (bottom of the sidebar) and scroll to **AI access**.
-2. Tick **Allow AI clients to read keyboard information and propose key and macro changes**.
+2. Tick **Allow AI clients to read your configuration and propose changes**. The AI access settings take effect at once: do not click **Save to keyboard** for them.
 3. Choose **Claude Code** or **Codex** and click the copy button in the corner of the box. The copy contains your access token even while the eye button keeps it hidden on screen.
 4. Connect:
    - **Claude Code:** paste the command into a terminal and run it. Keep it out of the assistant’s chat because it contains your access token. Then start a new Claude Code session so it picks up the new server.
@@ -53,7 +53,7 @@ The server listens only on this computer (127.0.0.1), on port 53417 unless you c
 
 ## Let the assistant save
 
-By default, only your click on **Save to keyboard** saves. To skip that click, tick **Let AI clients save to the keyboard** in **Settings**, under **AI access**. The assistant can then save with `save_to_keyboard`.
+By default, only your click on **Save to keyboard** saves. To skip that click, tick **Let AI clients save to the keyboard** in **Settings**, under **AI access**. It takes effect at once. Do not click **Save to keyboard** to apply it: that saves every unsaved change, the assistant's included. The assistant can then save with `save_to_keyboard`.
 
 - **You do not see the changes first.** The assistant can save without asking you in Agent. A mistaken or manipulated assistant can put a bad key or macro on your keyboard. Your assistant may still ask before it uses the tool, depending on its own permission settings.
 - **A save includes everything unsaved,** your own changes too.
