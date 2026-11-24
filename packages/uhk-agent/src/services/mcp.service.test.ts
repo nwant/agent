@@ -52,7 +52,7 @@ test('AI access starts disabled, generates a token and persists application sett
     assert.equal(status.enabled, false);
     assert.equal(status.port, DEFAULT_MCP_SETTINGS.port);
     assert.match(status.token, /^[a-f0-9]{64}$/);
-    assert.deepEqual(fixture.stored(), { enabled: false, port: 53417, token: status.token, revealTextMacros: false });
+    assert.deepEqual(fixture.stored(), { enabled: false, port: 53417, token: status.token, revealTextMacros: false, allowSave: false });
 });
 
 test('saved port and token are restored, with malformed saved values replaced', async context => {
@@ -88,7 +88,7 @@ test('configure rejects invalid input and callers outside the Agent main frame',
     }
     fixture.destroyWindow();
     await assert.rejects(fixture.invoke(IpcEvents.mcp.getSettings), /Unknown Agent window/);
-    assert.deepEqual(fixture.stored(), { enabled: false, port: 53418, token, revealTextMacros: false });
+    assert.deepEqual(fixture.stored(), { enabled: false, port: 53418, token, revealTextMacros: false, allowSave: false });
 });
 
 test('enable, regenerate, restart and disable control the listener and durable credential', async context => {
@@ -175,4 +175,51 @@ test('text macro reveal requires explicit opt-in and persists through restarts',
     assert.equal((await restarted.invoke(IpcEvents.mcp.getSettings)).revealTextMacros, true);
     await restarted.invoke(IpcEvents.mcp.configure, { ...input, revealTextMacros: false });
     assert.equal(restarted.stored().revealTextMacros, false);
+});
+
+test('letting AI clients save requires explicit opt-in and persists through restarts', async context => {
+    const port = await availablePort();
+    const fixture = setup({ enabled: true, port, token, allowSave: 'true' });
+    context.after(() => fixture.service.stop());
+    await fixture.service.start();
+    assert.equal(fixture.stored().allowSave, false);
+    const input = { enabled: true, port, regenerateToken: false };
+    await fixture.invoke(IpcEvents.mcp.configure, { ...input, allowSave: 'true' });
+    assert.equal(fixture.stored().allowSave, false);
+    await fixture.invoke(IpcEvents.mcp.configure, { ...input, allowSave: true });
+    assert.equal(fixture.stored().allowSave, true);
+    await fixture.service.stop();
+    const restarted = setup(fixture.stored());
+    context.after(() => restarted.service.stop());
+    await restarted.service.start();
+    assert.equal((await restarted.invoke(IpcEvents.mcp.getSettings)).allowSave, true);
+});
+
+for (const [name, change] of [
+    ['turning AI access off', { enabled: false, regenerateToken: false }],
+    ['regenerating the token', { enabled: true, regenerateToken: true }],
+] as const) {
+    test(`${name} stops AI clients from saving`, async context => {
+        const port = await availablePort();
+        const fixture = setup({ enabled: true, port, token, allowSave: true });
+        context.after(() => fixture.service.stop());
+        await fixture.service.start();
+        const status = await fixture.invoke(IpcEvents.mcp.configure, { port, allowSave: true, ...change });
+        assert.equal(status.allowSave, false);
+        assert.equal(fixture.stored().allowSave, false);
+    });
+}
+
+test('AI access that cannot start, or is saved as off, does not let AI clients save', async context => {
+    const busy = createServer();
+    await new Promise<void>(resolve => busy.listen(0, '127.0.0.1', resolve));
+    context.after(() => new Promise<void>(resolve => busy.close(() => resolve())));
+    const { port } = busy.address() as { port: number };
+    for (const enabled of [true, false]) {
+        const fixture = setup({ enabled, port, token, allowSave: true });
+        context.after(() => fixture.service.stop());
+        await fixture.service.start();
+        assert.equal((await fixture.invoke(IpcEvents.mcp.getSettings)).allowSave, false);
+        assert.equal(fixture.stored().allowSave, false);
+    }
 });

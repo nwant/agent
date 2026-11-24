@@ -1,5 +1,11 @@
-export interface McpSettings {
+/** What the user allows AI clients beyond reading and proposing changes. */
+export interface McpPermissions {
     revealTextMacros: boolean;
+    /** Whether save_to_keyboard may save without a click in Agent. */
+    allowSave: boolean;
+}
+
+export interface McpSettings extends McpPermissions {
     enabled: boolean;
     port: number;
     token: string;
@@ -15,12 +21,12 @@ export function isMcpPort(port: unknown): port is number {
 export const DEFAULT_MCP_SETTINGS: McpSettings = {
     enabled: false,
     revealTextMacros: false,
+    allowSave: false,
     port: 53417,
     token: '',
 };
 
-export interface ConfigureMcp {
-    revealTextMacros: boolean;
+export interface ConfigureMcp extends McpPermissions {
     enabled: boolean;
     port: number;
     regenerateToken: boolean;
@@ -35,6 +41,8 @@ export const MCP_SETTINGS_GROUP_NAMES = ['typingBehavior', 'mouseKeySpeed', 'led
 
 export type McpSettingsGroupName = typeof MCP_SETTINGS_GROUP_NAMES[number];
 
+export const MCP_SAVE_TOOL = 'save_to_keyboard';
+
 export interface McpToolCall {
     name: string;
     arguments?: Record<string, unknown>;
@@ -45,8 +53,7 @@ export interface McpToolReply {
     isError?: boolean;
 }
 
-export interface McpToolRequest {
-    revealTextMacros: boolean;
+export interface McpToolRequest extends McpPermissions {
     id: string;
     call: McpToolCall;
 }

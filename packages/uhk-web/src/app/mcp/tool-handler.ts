@@ -54,10 +54,10 @@ class ToolError extends Error {
     }
 }
 
-const KEY_PRESS_IS_THE_TEST = 'The checks prove the configuration loads, not that it works. Save to keyboard in Agent, then press the key to verify that it works.';
-const AFTER_A_VALID_PROPOSAL = 'Once a proposal passes the checks, they only establish that the configuration loads. Save to keyboard in Agent, then press the key to verify that it works.';
+const KEY_PRESS_IS_THE_TEST = 'The checks prove the configuration loads, not that it works. Save to keyboard (in Agent, or with save_to_keyboard if the user allows it), then have the user press the key to verify that it works.';
+const AFTER_A_VALID_PROPOSAL = 'Once a proposal passes the checks, they only establish that the configuration loads. Save to keyboard (in Agent, or with save_to_keyboard if the user allows it), then have the user press the key to verify that it works.';
 
-const SETTINGS_SAVE_NOTE = 'Review the proposed settings in Agent, then use Save to keyboard to apply them.';
+const SETTINGS_SAVE_NOTE = 'Review the proposed settings in Agent, then use Save to keyboard, or save_to_keyboard if the user allows it, to apply them.';
 
 interface WriteResult {
     value: unknown;
@@ -163,7 +163,7 @@ function readTool(state: ToolState, call: McpToolCall): unknown {
             return {
                 errors,
                 statusText,
-                summary: 'Agent has no cached macro errors. An error-free save indicates that the macro loaded. Save to keyboard in Agent if needed, then press the assigned key to verify that it works.',
+                summary: 'Agent has no cached macro errors. An error-free save indicates that the macro loaded. Save to keyboard if needed, then press the assigned key to verify that it works.',
             };
         }
         case 'get_settings': {
@@ -186,7 +186,7 @@ function readTool(state: ToolState, call: McpToolCall): unknown {
             const tagged = changes.filter(entry => entry.aiTagged).length;
             return {
                 summary: changes.length
-                    ? `${changes.length} unsaved ${changes.length === 1 ? 'change' : 'changes'}, ${tagged} AI-tagged. Save to keyboard in Agent would send all of them.`
+                    ? `${changes.length} unsaved ${changes.length === 1 ? 'change' : 'changes'}, ${tagged} AI-tagged. A save would send all of them.`
                     : 'No unsaved changes. Agent matches the keyboard.',
                 changes,
             };

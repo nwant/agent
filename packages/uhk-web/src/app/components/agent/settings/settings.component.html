@@ -219,7 +219,7 @@
                 <input type="checkbox" [checked]="ai.enabled"
                        (change)="configureMcp({ enabled: $event.target.checked })">
                 Allow AI clients to read keyboard information and propose key and macro changes.
-                Changes reach the keyboard when you click Save to keyboard.
+                Changes reach the keyboard when you click Save to keyboard, unless you let AI clients save.
             </label>
         </div>
         <p class="small text-muted mb-2">Connect an AI client on this computer. Access continues while Agent is in the system tray.</p>
@@ -230,6 +230,18 @@
                 Let AI read text macro contents
             </label>
         </div>
+        <div class="checkbox mb-0 mt-0">
+            <label>
+                <input type="checkbox" [checked]="ai.allowSave" [disabled]="!ai.enabled"
+                       aria-describedby="ai-access-save-warning"
+                       (change)="configureMcp({ allowSave: $event.target.checked })">
+                Let AI clients save to the keyboard
+            </label>
+        </div>
+        <p id="ai-access-save-warning" class="small text-muted mb-2">
+            AI clients can save all unsaved changes, yours included, without asking you in Agent.
+            Macros that can run without a key press, launcher or shell shortcuts, and changes that could lock you out still need your click.
+        </p>
 
         <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3">
             <div class="btn-group" role="group" aria-label="AI client">

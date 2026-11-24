@@ -82,3 +82,42 @@ test('bridge ignores empty replies and unknown request ids', async () => {
     ipc.emit(IpcEvents.mcp.response, { sender: renderer }, [{ id: sent[0].id, reply }]);
     assert.deepEqual(await pending, reply);
 });
+
+test('bridge sends the current permissions with each request and grants none by default', async () => {
+    const { ipc, renderer, sent, bridge } = setup();
+    for (const [index, permissions] of [undefined, { revealTextMacros: true, allowSave: true }].entries()) {
+        const pending = bridge.request(call, permissions);
+        ipc.emit(IpcEvents.mcp.response, { sender: renderer }, [{ id: sent[index].id, reply }]);
+        await pending;
+    }
+    assert.deepEqual(sent.map(({ revealTextMacros, allowSave }) => ({ revealTextMacros, allowSave })), [
+        { revealTextMacros: false, allowSave: false }, { revealTextMacros: true, allowSave: true },
+    ]);
+});
+
+test('bridge waits longer for a save than for other calls', async context => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
+    const { ipc, renderer, sent, bridge } = setup();
+    const pending = bridge.request({ name: 'save_to_keyboard' });
+    context.mock.timers.tick(60_000);
+    ipc.emit(IpcEvents.mcp.response, { sender: renderer }, [{ id: sent[0].id, reply }]);
+    assert.deepEqual(await pending, reply);
+});
+
+test('bridge reports an unanswered save as unknown, and one never sent as an error', async context => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
+    for (const interrupt of [
+        () => context.mock.timers.tick(120_000),
+        (renderer: EventEmitter) => renderer.emit('render-process-gone'),
+    ]) {
+        const { bridge, renderer } = setup();
+        const pending = bridge.request({ name: 'save_to_keyboard' });
+        interrupt(renderer);
+        const result = await pending;
+        assert.equal(result.isError, true);
+        assert.equal(JSON.parse(result.content[0].text).result, 'unknown');
+    }
+    const { bridge, renderer } = setup();
+    renderer.isLoadingMainFrame = () => true;
+    await assert.rejects(bridge.request({ name: 'save_to_keyboard' }), /unavailable or still loading/);
+});

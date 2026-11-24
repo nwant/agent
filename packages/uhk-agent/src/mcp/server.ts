@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { createServer, Server } from 'node:http';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { MCP_SETTINGS_GROUP_NAMES, type FirmwareReferenceManual, type McpSettings, type McpToolCall, type McpToolReply } from 'uhk-common';
+import { MCP_SAVE_TOOL, MCP_SETTINGS_GROUP_NAMES, type FirmwareReferenceManual, type McpSettings, type McpToolCall, type McpToolReply } from 'uhk-common';
 import { checkMcpAccess } from './access-gate';
 
 const REFERENCE_MANUAL_URI = 'uhk://smart-macro/reference-manual';
@@ -121,13 +121,13 @@ export class AgentMcpServer {
             });
             registerRead('get_unsaved_changes', [
                 'List every difference between Agent and the keyboard, including the user\'s own edits: key actions, keymaps added or removed, macros and other settings.',
-                'Save to keyboard in Agent would send all of them.',
+                'A save would send all of them.',
                 'aiTagged marks entries that an AI client\'s proposed changes touched.',
                 'Each entry includes Agent-computed riskFlags. An empty array means no rule matched.',
                 'Key actions name the macro they play instead of its index. Text actions are hidden unless enabled in Agent.',
             ].join(' '));
             registerTool('set_key_action', [
-                'Change one key in Agent\'s unsaved changes. Nothing is written to the keyboard: the user reviews the change and clicks Save to keyboard in Agent.',
+                'Change one key in Agent\'s unsaved changes. Nothing is written to the keyboard until a save: the user clicks Save to keyboard in Agent, or allows save_to_keyboard.',
                 'Use a keymap abbreviation or unique name and a layer from list_keymaps, and a moduleId and keyId from get_layer.',
                 'action takes the serialized shape get_layer returns (playMacro uses macroIndex, the position in list_macros), or "none" to clear the key.',
                 'Agent refuses the change if the keymap, layer, key or macro does not exist or the configuration would not serialize.',
@@ -143,7 +143,7 @@ export class AgentMcpServer {
                     action: z.union([z.literal('none'), z.record(z.string(), z.unknown())]),
                 },
             });
-            const macroWriteNote = 'Proposes an unsaved change and returns Agent-computed riskFlags. An empty array means no rule matched. The user reviews it and clicks Save to keyboard in Agent, then presses the assigned key to verify it works.';
+            const macroWriteNote = 'Proposes an unsaved change and returns Agent-computed riskFlags. An empty array means no rule matched. Save it with Save to keyboard in Agent, or with save_to_keyboard if the user allows it. Then the user presses the assigned key to verify it works.';
             const macroName = z.string();
             const macroActions = z.array(z.record(z.string(), z.unknown())).describe('Ordered actions in the serializer JSON shape returned by get_macro.');
             const macroFlags = { isLooped: z.boolean().optional(), isPrivate: z.boolean().optional() };
@@ -169,7 +169,7 @@ export class AgentMcpServer {
                     destructive: true,
                     idempotent: true,
                 });
-            const keymapWriteNote = 'Nothing is written to the keyboard: Agent proposes an unsaved change and returns Agent-computed riskFlags (an empty array means no rule matched). The user reviews it and clicks Save to keyboard in Agent.';
+            const keymapWriteNote = 'Nothing is written to the keyboard: Agent proposes an unsaved change and returns Agent-computed riskFlags (an empty array means no rule matched). Save it with Save to keyboard in Agent, or with save_to_keyboard if the user allows it.';
             const keymapId = z.string().describe('A keymap abbreviation or unique name from list_keymaps.');
             const abbreviationRule = 'An abbreviation is 1 to 3 uppercase letters or digits, as the keyboard display shows it; newer firmware also allows some symbols.';
             registerTool('duplicate_keymap',
@@ -208,10 +208,20 @@ export class AgentMcpServer {
                 'Propose persistent changes to typingBehavior, mouseKeySpeed, led, battery or modules. Prefer update_settings over smart-macro `set` commands in $onInit for persistent changes.',
                 'Use values from get_settings in the serializer JSON shape and send only the fields you want to change. For modules, send objects keyed by module ID with just the settings to edit.',
                 'Use the Advanced secondaryRoleStrategy when editing advanced typing settings. Legacy fields and derived configuration metadata are read-only. Manage connections, pairing and Bluetooth in Agent.',
-                'Review the AI-tagged proposal in Agent and use Save to keyboard to apply it.',
+                'To apply the proposal, use Save to keyboard in Agent, or save_to_keyboard if the user allows it.',
             ].join(' '), {
                 inputSchema: { group: z.enum(MCP_SETTINGS_GROUP_NAMES), values: z.record(z.string(), z.unknown()) },
                 idempotent: true,
+            });
+            registerTool(MCP_SAVE_TOOL, [
+                'Save all unsaved changes to the keyboard, the user\'s own included. Works only if the user turned on "Let AI clients save to the keyboard" in Agent.',
+                'Call get_unsaved_changes first to see what would be saved.',
+                'Agent refuses changes that could run without a key press, open a launcher or shell, or lock the user out: the user saves those in Agent.',
+                'Replies saved, failed or unknown. Failed and unknown do not mean that nothing was written.',
+                'After a save, ask the user to press the key, then call get_macro_errors.',
+            ].join(' '), {
+                inputSchema: z.strictObject({}),
+                destructive: true,
             });
             registerRead('get_macro_errors', 'Read cached firmware macro errors and the latest status text, including setStatus output, after saving and pressing the assigned key.');
             void (async () => {

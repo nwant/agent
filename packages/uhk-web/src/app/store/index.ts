@@ -11,8 +11,10 @@ import {
     HardwareConfiguration,
     HardwareModules,
     HistoryFileInfo as CommonHistoryFileInfo,
+    HOST_CONNECTION_COUNT_MAX,
     HostConnections,
     isDeviceProtocolSupportActiveKeymapIndex,
+    isUserConfigVersionHigherThanFirmware,
     isVersionGt,
     isVersionGteV1CanUndefined,
     Keymap,
@@ -35,6 +37,7 @@ import {
     VERSIONS,
 } from 'uhk-common';
 import { environment } from '../../environments/environment';
+import type { SaveBlock } from '../mcp/ai-save';
 import { getTaggedUnsavedChanges } from '../mcp/risk-flags';
 import {
     AppUpdateNotificationViewModel,
@@ -748,6 +751,29 @@ export const getShowFirmwareUpgradePanel = createSelector(
             && hardwareModules.rightModuleInfo.userConfigVersion
             && isVersionGt(VERSIONS.userConfigVersion, hardwareModules.rightModuleInfo.userConfigVersion);
     });
+
+/** Why the save path turns a save away before it writes, or undefined when it can write. */
+export const getSaveBlock = createSelector(
+    getShowFirmwareUpgradePanel, getUserConfiguration, deviceState,
+    (showFirmwareUpgrade, userConfiguration, device): SaveBlock | undefined => {
+        if (showFirmwareUpgrade) {
+            return 'firmwareUpgrade';
+        }
+        if (userConfiguration.hostConnections.length > HOST_CONNECTION_COUNT_MAX) {
+            return 'hostConnections';
+        }
+        if (isUserConfigVersionHigherThanFirmware(userConfiguration.getSemanticVersion(), device.modules.rightModuleInfo?.userConfigVersion)) {
+            return 'configurationVersion';
+        }
+        return undefined;
+    },
+);
+/** Whether Agent is doing something that a save must not interrupt. */
+export const isBusyForSave = createSelector(
+    isUserConfigLoading, isUserConfigSaving, updatingFirmware, isLeftHalfPairing, getDongleState,
+    (loading, saving, updating, leftHalfPairing, dongle) =>
+        loading || saving || updating || leftHalfPairing || dongle.operation !== DongleOperations.None,
+);
 
 export const getUserConfigHistoryState = (state: AppState) => state.userConfigurationHistory;
 export const getUserConfigHistoryComponentState = createSelector(

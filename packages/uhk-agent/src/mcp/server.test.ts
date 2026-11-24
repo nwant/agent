@@ -127,7 +127,7 @@ test('the SDK advertises all tools and forwards validated lookup arguments', asy
     const tools = JSON.parse(listed.text).result.tools as { name: string; description: string }[];
     assert.deepEqual(tools.map(tool => tool.name).sort(), [
         'create_macro', 'delete_keymap', 'delete_macro', 'duplicate_keymap', 'get_device_info', 'get_layer', 'get_macro', 'get_macro_errors', 'get_reference_manual',
-        'get_settings', 'get_unsaved_changes', 'list_keymaps', 'list_macros', 'rename_keymap', 'rename_macro', 'set_default_keymap', 'set_key_action', 'update_macro', 'update_settings',
+        'get_settings', 'get_unsaved_changes', 'list_keymaps', 'list_macros', 'rename_keymap', 'rename_macro', 'save_to_keyboard', 'set_default_keymap', 'set_key_action', 'update_macro', 'update_settings',
     ]);
     assert.match(tools.find(tool => tool.name === 'get_unsaved_changes').description, /keymap.*added or removed/i);
     const settingsTool = tools.find(tool => tool.name === 'get_settings') as unknown as {
@@ -288,4 +288,27 @@ test('keymap writes name the abbreviation as the keymap identifier and forward v
         const rejected = await httpRequest({ port, body: { ...toolCall, params } });
         assert.equal((JSON.parse(rejected.text) as { result: McpToolReply }).result.isError, true, JSON.stringify(params));
     }
+});
+
+test('save_to_keyboard is always listed as a destructive tool without arguments', async context => {
+    const port = await availablePort();
+    const calls: unknown[] = [];
+    const server = new AgentMcpServer(async call => {
+        calls.push(call);
+        return { content: [{ type: 'text', text: 'saved' }] };
+    }, unexpectedManual);
+    context.after(() => server.stop());
+    await server.start({ port, token: 'test-token', enabled: true });
+
+    const listed = await httpRequest({ port, body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } });
+    const tools = JSON.parse(listed.text).result.tools as Array<{ name: string; annotations: object; inputSchema: { properties: object } }>;
+    const tool = tools.find(({ name }) => name === 'save_to_keyboard');
+    assert.deepEqual(tool.annotations, { readOnlyHint: false, destructiveHint: true, openWorldHint: false });
+    assert.deepEqual(tool.inputSchema.properties, {});
+
+    const save = (args: object) => httpRequest({ port, body: { ...toolCall, params: { name: 'save_to_keyboard', arguments: args } } });
+    assert.equal(JSON.parse((await save({ force: true })).text).result.isError, true);
+    assert.deepEqual(calls, []);
+    assert.equal(JSON.parse((await save({})).text).result.content[0].text, 'saved');
+    assert.deepEqual(calls, [{ name: 'save_to_keyboard', arguments: {} }]);
 });

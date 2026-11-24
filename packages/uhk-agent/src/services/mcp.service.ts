@@ -29,7 +29,7 @@ export class McpService extends MainServiceBase {
     constructor(logService: LogService, win: BrowserWindow, private readonly options: McpServiceOptions) {
         super(logService, win);
         const bridge = new McpRendererBridge({ getWindow: () => this.win, ipc: options.ipc });
-        this.server = new AgentMcpServer(call => bridge.request(call, this.status.revealTextMacros), options.readReferenceManual);
+        this.server = new AgentMcpServer(call => bridge.request(call, this.status), options.readReferenceManual);
         options.ipc.handle(IpcEvents.mcp.getSettings, event => {
             this.checkSender(event);
             return this.status;
@@ -49,6 +49,7 @@ export class McpService extends MainServiceBase {
             if (saved) {
                 this.status.enabled = saved.enabled === true;
                 this.status.revealTextMacros = saved.revealTextMacros === true;
+                this.status.allowSave = this.status.enabled && saved.allowSave === true;
                 if (isMcpPort(saved.port)) {
                     this.status.port = saved.port;
                 }
@@ -88,6 +89,8 @@ export class McpService extends MainServiceBase {
         this.status = {
             enabled: input.enabled,
             revealTextMacros: input.revealTextMacros === true,
+            // Allowing saves trusts the clients that hold the current token.
+            allowSave: input.enabled && !input.regenerateToken && input.allowSave === true,
             port: input.port,
             token: input.regenerateToken ? generateMcpToken() : this.status.token,
             error: '',
@@ -97,9 +100,9 @@ export class McpService extends MainServiceBase {
     }
 
     private async apply(): Promise<void> {
-        const { enabled, port, token, revealTextMacros } = this.status;
+        const { enabled, port } = this.status;
         // Persist before listening, so the command always uses the durable credential.
-        await this.options.settings.set(MCP_SETTINGS_KEY, { enabled, port, token, revealTextMacros });
+        await this.persist();
         if (!enabled) {
             return;
         }
@@ -109,8 +112,13 @@ export class McpService extends MainServiceBase {
         } catch (error) {
             this.logService.error(`[McpService] Could not bind to 127.0.0.1:${port}`, error);
             await this.server.stop();
-            this.status = { ...this.status, enabled: false, error: `Could not start AI access on port ${port}. Choose another port.` };
-            await this.options.settings.set(MCP_SETTINGS_KEY, { enabled: false, port, token, revealTextMacros });
+            this.status = { ...this.status, enabled: false, allowSave: false, error: `Could not start AI access on port ${port}. Choose another port.` };
+            await this.persist();
         }
+    }
+
+    private persist(): Promise<void> {
+        const { enabled, port, token, revealTextMacros, allowSave } = this.status;
+        return this.options.settings.set(MCP_SETTINGS_KEY, { enabled, port, token, revealTextMacros, allowSave });
     }
 }

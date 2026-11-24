@@ -205,6 +205,11 @@ export class SaveToKeyboardSuccessAction implements Action {
 
 export class SaveToKeyboardSuccessFailed implements Action {
     type = ActionTypes.SaveToKeyboardFailed;
+
+    /**
+     * @param payload - The serialized user configuration that was sent, and the error. Absent when nothing was sent.
+     */
+    constructor(public payload?: { configuration: UserConfigurationJson; message: string }) {}
 }
 
 export class HideSaveToKeyboardButton implements Action {

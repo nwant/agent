@@ -3,6 +3,7 @@ import { KeyModifiers, keyActionType, LayerName, macroActionType } from 'uhk-com
 import {
     diffUserConfiguration, type ConfigDiffEntry, type KeyActionDiffEntry, type KeyActionJson, type MacroJson, type UserConfigurationJson,
 } from './config-diff.js';
+import { isEventMacro } from './event-macro-calls.js';
 
 const RISK_FLAGS = ['runsWithoutKeyPress', 'typesIntoHost', 'opensLauncherOrShell', 'cannotBeChecked', 'changesKeyboard', 'lockout'] as const;
 
@@ -20,8 +21,6 @@ export function getTaggedUnsavedChanges(
         aiTagged: tags.has(entry.id),
     }));
 }
-
-const EVENT_MACRO_NAME = /^\$on(?:Init|KeymapChange|LayerChange|KeymapLayerChange|CapsLockStateChange|NumLockStateChange|ScrollLockStateChange|Error|Join|Split)(?:\s|$)/;
 
 const KEY_COMMANDS = new Map([
     ['pressKey', 'press'], ['releaseKey', 'release'], ['holdKey', 'hold'], ['tapKey', 'tap'], ['toggleKey', 'toggle'], ['tapKeySeq', 'tap'],
@@ -248,7 +247,7 @@ export function diffUserConfigurationWithRiskFlags(
     return diffUserConfiguration(baseline, current).map(entry => {
         const flags = new Set<RiskFlag>();
         if (entry.type === 'macro' && entry.after) {
-            if (EVENT_MACRO_NAME.test(entry.name)) {
+            if (isEventMacro(entry.name)) {
                 flags.add('runsWithoutKeyPress');
             }
             flagMacroActions(entry.after, flags);

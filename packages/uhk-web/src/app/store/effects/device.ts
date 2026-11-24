@@ -11,9 +11,7 @@ import {
     FirmwareUpgradeIpcResponse,
     getHardwareConfigFromDeviceResponse,
     HardwareConfiguration,
-    HOST_CONNECTION_COUNT_MAX,
     IpcResponse,
-    isUserConfigVersionHigherThanFirmware,
     NotificationType,
     shouldUpgradeFirmware,
     UdevRulesInfo,
@@ -75,7 +73,7 @@ import {
     getKeyboardBaseline,
     getMcpDeviceInfo,
     getRouterState,
-    getShowFirmwareUpgradePanel,
+    getSaveBlock,
     getUserConfiguration,
     isUserConfigLoading,
     runningInElectron,
@@ -358,22 +356,23 @@ export class DeviceEffects {
             ofType<ConfigurationWriteRequest>(
                 ActionTypes.SaveConfiguration, ActionTypes.UpdateFirmware, ActionTypes.UpdateFirmwareWith, ActionTypes.RecoveryDevice,
             ),
-            withLatestFrom(this.store, this.store.select(getShowFirmwareUpgradePanel)),
-            mergeMap(([request, state, shouldUpgradeFirmware]) => {
+            withLatestFrom(this.store),
+            mergeMap(([request, state]) => {
                 const isSave = request.type === ActionTypes.SaveConfiguration;
                 const userConfig = getUserConfiguration(state);
-                if (isSave && shouldUpgradeFirmware) {
+                const saveBlock = isSave ? getSaveBlock(state) : undefined;
+                if (saveBlock === 'firmwareUpgrade') {
                     this.router.navigate(['/update-firmware']);
                     return [new SaveToKeyboardSuccessFailed()];
                 }
 
-                if (isSave && userConfig.hostConnections.length > HOST_CONNECTION_COUNT_MAX) {
+                if (saveBlock === 'hostConnections') {
                     this.router.navigate(['/device/host-connections']);
                     return [new SaveToKeyboardSuccessFailed()];
                 }
 
-                const firmwareUserConfigVersion = state.device.modules.rightModuleInfo?.userConfigVersion;
-                if (isSave && isUserConfigVersionHigherThanFirmware(userConfig.getSemanticVersion(), firmwareUserConfigVersion)) {
+                if (saveBlock === 'configurationVersion') {
+                    const firmwareUserConfigVersion = state.device.modules.rightModuleInfo?.userConfigVersion;
                     return [
                         new ShowNotificationAction({
                             type: NotificationType.Error,
@@ -471,7 +470,7 @@ export class DeviceEffects {
                         type: NotificationType.Error,
                         message: response.error.message
                     }),
-                    new SaveToKeyboardSuccessFailed()
+                    new SaveToKeyboardSuccessFailed({ configuration: sentConfiguration, message: response.error.message })
                 ];
             })
         )
