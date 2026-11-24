@@ -1,5 +1,8 @@
 ![Agent logo & text](https://raw.githubusercontent.com/UltimateHackingKeyboard/agent/master/packages/uhk-web/src/assets/images/agent-logo-with-text.png)
 
+> **This is the `ai-access-preview` branch of a fork, not an official Agent release.** It lets an AI assistant read your UHK configuration, propose changes and, if you allow it, save them to the keyboard.
+> **To set it up, follow [docs/ai-access.md](docs/ai-access.md), not the steps below.** Coding assistants: start with [its setup steps](docs/ai-access.md#set-up-with-an-assistant).
+
 Agent is the configuration application of the [Ultimate Hacking Keyboard](https://ultimatehackingkeyboard.com/).
 
 Please do not build Agent from source unless you want to develop it. Using an existing release is far easier for everyone involved:

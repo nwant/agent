@@ -1,5 +1,9 @@
 # Agent — project conventions
 
+## If you are setting up the AI access preview
+
+This is the `ai-access-preview` branch of a fork. If the person wants to install, connect or test AI access, follow [docs/ai-access.md](docs/ai-access.md#set-up-with-an-assistant) and ignore the rest of this file. Stay on this branch: the feature is not on `master`. The rest of this file is for changing Agent's code.
+
 Angular/NgRx desktop agent. Application packages live under `packages/` (`uhk-common`, `uhk-web`, `uhk-agent`, `uhk-usb`, `uhk-smart-macro`, …).
 
 ## Branch from master for PRs
