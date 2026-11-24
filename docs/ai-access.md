@@ -2,7 +2,7 @@
 
 This branch of Agent lets an AI coding assistant, such as Claude Code or Codex, read your UHK configuration and propose changes to keys, keymaps, macros, and settings. Nothing reaches the keyboard until you review the proposed changes in Agent and click **Save to keyboard**, unless you [let the assistant save](#let-the-assistant-save). The assistant talks to Agent through an MCP server (Model Context Protocol, the standard way AI assistants connect to tools) that runs inside Agent on your own computer.
 
-This is a preview build from a fork, not an official Agent release. It has been tested end to end on a UHK 80 with firmware v18.0.3 on macOS, except for letting the assistant save, which is new. Other models, including the UHK 60 v2, should work because the feature uses the same Agent code for every model, but they have not been tested.
+This is a preview build from a fork, not an official Agent release. It has been tested end to end on a UHK 80 with firmware v18.0.3 on macOS. Letting the assistant save is newer: it was tested with Codex on a UHK 80 on macOS, running a custom firmware build that reports v18.0.3. Other models, including the UHK 60 v2, should work because the feature uses the same Agent code for every model, but they have not been tested.
 
 ## What you need
 
@@ -55,11 +55,12 @@ The server listens only on this computer (127.0.0.1), on port 53417 unless you c
 
 By default, only your click on **Save to keyboard** saves. To skip that click, tick **Let AI clients save to the keyboard** in **Settings**, under **AI access**. It takes effect at once. Do not click **Save to keyboard** to apply it: that saves every unsaved change, the assistant's included. The assistant can then save with `save_to_keyboard`.
 
-- **You do not see the changes first.** The assistant can save without asking you in Agent. A mistaken or manipulated assistant can put a bad key or macro on your keyboard. Your assistant may still ask before it uses the tool, depending on its own permission settings.
+- **You do not see the changes first.** The assistant can save without asking you in Agent. A mistaken or manipulated assistant can put a bad key or macro on your keyboard. Your assistant may still ask before it uses the tool, depending on its own permission settings. Do not count on that: in our tests, Codex had its own automated reviewer approve saves instead of asking a person.
 - **A save includes everything unsaved,** your own changes too.
 - **Some changes still need your click:** macros that run without a key press, macros that such a macro calls (every macro change, if Agent cannot tell which it calls), launcher or shell shortcuts Agent recognizes, and changes that could lock you out of the keyboard. Agent refuses to let the assistant save while any of these is waiting. Use **Review changes** and **Save to keyboard**.
 - **Agent does not recognize every risk.** For example, the assistant can save a macro that types a harmful command when you press its key, or one that taps the Windows key alone.
 - Agent shows a notice after each save by the assistant.
+- **Not tested on a keyboard:** unplugging during a save, and pairing a dongle or Bluetooth device while the assistant's changes are waiting. Agent should keep the pairing unsaved until you review.
 - To go back, open **Configuration** under **Device** and click **Restore** next to an earlier entry in **Configuration history**. An entry exists only for a configuration saved from Agent on this computer.
 
 Regenerating the token or turning AI access off turns this setting off.
