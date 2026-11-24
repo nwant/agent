@@ -214,21 +214,22 @@
 <div class="col-12 mt-3" *ngIf="runningInElectron$ | async">
     <ng-container *ngIf="mcpStatus$ | async as ai">
         <h2 class="h5">AI access</h2>
+        <p class="small text-muted mb-2">These settings take effect at once. You do not need to click Save to keyboard.</p>
         <div class="checkbox mb-0 mt-0">
             <label>
                 <input type="checkbox" [checked]="ai.enabled"
                        (change)="configureMcp({ enabled: $event.target.checked })">
-                Allow AI clients to read keyboard information and propose key and macro changes.
-                Changes reach the keyboard when you click Save to keyboard, unless you let AI clients save.
+                Allow AI clients to read your configuration and propose changes
             </label>
+            <circle-tooltip class="ms-1" [tooltip]="aiAccessTooltip" [width]="420" />
         </div>
-        <p class="small text-muted mb-2">Connect an AI client on this computer. Access continues while Agent is in the system tray.</p>
-        <div class="checkbox mt-0">
+        <div class="checkbox mb-0 mt-0">
             <label>
                 <input type="checkbox" [checked]="ai.revealTextMacros"
                        (change)="configureMcp({ revealTextMacros: $event.target.checked })">
                 Let AI read text macro contents
             </label>
+            <circle-tooltip class="ms-1" [tooltip]="aiTextMacrosTooltip" [width]="420" />
         </div>
         <div class="checkbox mb-0 mt-0">
             <label>
@@ -237,10 +238,10 @@
                        (change)="configureMcp({ allowSave: $event.target.checked })">
                 Let AI clients save to the keyboard
             </label>
+            <circle-tooltip class="ms-1" [tooltip]="aiSaveTooltip" [width]="420" />
         </div>
         <p id="ai-access-save-warning" class="small text-muted mb-2">
             AI clients can save all unsaved changes, yours included, without asking you in Agent.
-            Macros that can run without a key press, launcher or shell shortcuts, and changes that could lock you out still need your click.
         </p>
 
         <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3">
@@ -259,8 +260,9 @@
                        class="form-control ai-access-port"
                        [value]="ai.port"
                        (change)="configureMcp({ port: $event.target.valueAsNumber })">
+                <circle-tooltip [tooltip]="aiPortTooltip" [width]="330" />
                 <button type="button" class="btn btn-default ms-2" [disabled]="!ai.token"
-                        ngbTooltip="Connected clients lose access until you give them the new token."
+                        ngbTooltip="Connected clients lose access until you give them the new token. AI clients can no longer save until you allow it again."
                         triggers="hover"
                         container="body"
                         (click)="configureMcp({ regenerateToken: true })">Regenerate token</button>
@@ -321,6 +323,25 @@
 
 <ng-template #keyLanguageTooltip>
     <p class="text-center mb-0">Controls scancode labels on the keymap and in scancode dropdowns. This is an Agent setting and is not saved to the keyboard. Choose the layout that matches your keycaps (US, UK, German, or Nordic).</p>
+</ng-template>
+
+<ng-template #aiAccessTooltip>
+    <p>AI clients on this computer, such as Claude Code or Codex, can read your keymaps, macros and settings, and propose changes to them.</p>
+    <p class="mb-0">Proposed changes wait in Agent. They reach the keyboard when you click Save to keyboard, unless you let AI clients save. Access continues while Agent is in the system tray.</p>
+</ng-template>
+
+<ng-template #aiTextMacrosTooltip>
+    <p class="mb-0">When off, AI clients see only the length of text macros. Leave it off if a text macro holds a password. Smart-macro commands are always visible, including text typed by <code>write</code>.</p>
+</ng-template>
+
+<ng-template #aiSaveTooltip>
+    <p>AI clients can save without a click in Agent, and Agent shows a notice after each save. Leave it off to review every change before it reaches the keyboard.</p>
+    <p>You still need to save these yourself: macros that run without a key press, macros that they call, launcher or shell shortcuts Agent recognizes, and changes that could lock you out.</p>
+    <p class="mb-0">Regenerating the token or turning AI access off turns this off.</p>
+</ng-template>
+
+<ng-template #aiPortTooltip>
+    <p class="mb-0">Agent listens on this port, on this computer only. After you change it, update the connection in your AI client.</p>
 </ng-template>
 
 <ng-template #systemThemeTooltip>
