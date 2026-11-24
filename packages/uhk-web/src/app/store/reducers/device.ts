@@ -213,6 +213,7 @@ export function reducer(state = initialState, action: Action): State {
             };
         }
 
+        case Device.ActionTypes.AutomaticSavePaused:
         case Device.ActionTypes.ShowSaveToKeyboardButton: {
             return {
                 ...state,

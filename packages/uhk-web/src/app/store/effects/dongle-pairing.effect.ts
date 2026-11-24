@@ -46,7 +46,7 @@ export class DonglePairingEffect {
         .pipe(
             ofType(ActionTypes.DeleteHostConnectionSuccess),
             map(() => {
-                return new SaveConfigurationAction(true);
+                return new SaveConfigurationAction(true, true);
             })
         ));
 
@@ -84,7 +84,7 @@ export class DonglePairingEffect {
         .pipe(
             ofType<DonglePairingSuccessAction>(ActionTypes.DonglePairingSuccess),
             map(() => {
-                return new SaveConfigurationAction(true);
+                return new SaveConfigurationAction(true, true);
             })
         ));
 }

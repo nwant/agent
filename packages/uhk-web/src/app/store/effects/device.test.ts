@@ -60,3 +60,29 @@ test('an approved desktop save starts the write', async () => {
     assert.equal(authorize.mock.callCount(), 1);
     assert.deepEqual(types, [ActionTypes.ConfigurationWriteStarted]);
 });
+
+test('an automatic save pauses for review while AI-tagged changes are waiting', async () => {
+    const { emitted, types, authorize } = await runRequest(new SaveConfigurationAction(true, true), { aiTags: ['macro:AI'] });
+    assert.deepEqual(types, [ActionTypes.AutomaticSavePaused, AppActions.AppShowNotification]);
+    const notification = (emitted[1] as ShowNotificationAction).payload;
+    assert.equal(notification.type, NotificationType.Warning);
+    assert.match(notification.message, /not saved yet.*review/i);
+    assert.equal(authorize.mock.callCount(), 0);
+});
+
+test('an automatic save without AI-tagged changes starts the write', async () => {
+    const { types, authorize } = await runRequest(new SaveConfigurationAction(true, true));
+    assert.equal(authorize.mock.callCount(), 1);
+    assert.deepEqual(types, [ActionTypes.ConfigurationWriteStarted]);
+});
+
+test('a save the user asked for starts the write with AI-tagged changes', async () => {
+    const { types, authorize } = await runRequest(new SaveConfigurationAction(true), { aiTags: ['macro:AI'] });
+    assert.equal(authorize.mock.callCount(), 1);
+    assert.deepEqual(types, [ActionTypes.ConfigurationWriteStarted]);
+});
+
+test('an automatic browser save ignores AI tags', async () => {
+    const { types } = await runRequest(new SaveConfigurationAction(true, true), { electron: false, aiTags: ['macro:AI'] });
+    assert.deepEqual(types, [ActionTypes.ConfigurationWriteStarted]);
+});

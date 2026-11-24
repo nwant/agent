@@ -107,7 +107,7 @@ export class UserConfigEffects {
     addNewPairedDevives$ = createEffect(() => this.actions$
         .pipe(
             ofType(ActionTypes.AddNewPairedDevicesToHostConnections),
-            map(() => new SaveConfigurationAction(true))
+            map(() => new SaveConfigurationAction(true, true))
         ));
 
     changeDevice$ = createEffect(() => this.actions$

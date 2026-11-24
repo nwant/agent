@@ -25,6 +25,7 @@ import {
 
 import {
     ActionTypes,
+    AutomaticSavePausedAction,
     ChangeDeviceAction,
     ChangeKeyboardLayoutAction,
     ChangeKeyboardLayoutReplyAction,
@@ -67,6 +68,7 @@ import {
 import {
     AppState,
     deviceConnected,
+    getAiTags,
     getConnectedDevice,
     getHardwareConfiguration,
     getHostConnections,
@@ -388,6 +390,16 @@ export class DeviceEffects {
                     || (request.payload !== UHK_DEVICE_IDS.UHK80_LEFT && request.payload !== UHK_DEVICE_IDS.UHK_DONGLE);
                 if (!runningInElectron(state) || !writesUserConfig) {
                     return of(startWrite);
+                }
+
+                if (request.type === ActionTypes.SaveConfiguration && request.automatic && getAiTags(state).length) {
+                    return [
+                        new AutomaticSavePausedAction(),
+                        new ShowNotificationAction({
+                            type: NotificationType.Warning,
+                            message: 'The connection change is not saved yet. Review the unsaved changes, which include AI-tagged changes, then save to keyboard.',
+                        }),
+                    ];
                 }
 
                 const baseline = getKeyboardBaseline(state);

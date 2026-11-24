@@ -356,6 +356,7 @@ function reduceConfiguration(state: State, action: ConfigurationAction): State {
                 )
             };
 
+        case DeviceActions.ActionTypes.AutomaticSavePaused:
         case DeviceActions.ActionTypes.SaveToKeyboardFailed: {
             return {
                 ...state,

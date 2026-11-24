@@ -45,6 +45,18 @@ export function reducer(state = initialState, action: Action): State {
             }
         }
 
+        case Device.ActionTypes.AutomaticSavePaused: {
+            if (state.state !== DonglePairingStates.SavingToKeyboard) {
+                return state;
+            }
+
+            return {
+                ...state,
+                operation: DongleOperations.None,
+                state: DonglePairingStates.Idle,
+            };
+        }
+
         case Device.ActionTypes.SaveToKeyboardFailed: {
             if (state.state !== DonglePairingStates.SavingToKeyboard) {
                 return state;

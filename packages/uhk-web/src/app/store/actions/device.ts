@@ -48,6 +48,7 @@ export enum ActionTypes {
     ShowSaveToKeyboardButton = '[device] show save to keyboard button',
     SaveToKeyboardSuccess = '[device] save to keyboard success',
     SaveToKeyboardFailed = '[device] save to keyboard failed',
+    AutomaticSavePaused = '[device] automatic save paused',
     HideSaveToKeyboardButton = '[device] hide save to keyboard button',
     ResetUserConfiguration = '[device] reset user configuration',
     ResetPcMouseSpeedSettings = '[device] reset PC mouse speed settings',
@@ -164,9 +165,15 @@ export class SaveConfigurationAction implements Action {
 
     /**
      * @param payload - if true then save user configuration in the history
+     * @param automatic - if true then Agent saves by itself, not because the user asked for a save
      */
-    constructor(public payload: boolean) {
+    constructor(public payload: boolean, public automatic = false) {
     }
+}
+
+/** Agent did not save by itself, because AI-tagged changes that the user has not reviewed would be saved too. */
+export class AutomaticSavePausedAction implements Action {
+    type = ActionTypes.AutomaticSavePaused;
 }
 
 export class SaveConfigurationProgressChangedAction implements Action {
@@ -402,6 +409,7 @@ export type Actions
     | SetPrivilegeOnLinuxReplyAction
     | ConnectionStateChangedAction
     | ShowSaveToKeyboardButtonAction
+    | AutomaticSavePausedAction
     | SaveConfigurationAction
     | ConfigurationWriteStartedAction
     | SaveConfigurationProgressChangedAction

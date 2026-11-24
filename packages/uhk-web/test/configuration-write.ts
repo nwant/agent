@@ -18,12 +18,14 @@ import { DeviceEffects } from '../src/app/store/effects/device';
 
 export async function runRequest(request: ConfigurationWriteRequest, {
     userConfig = new UserConfiguration().fromJsonObject(structuredClone(UHK_80_USER_CONFIG)),
-    electron = true, skipFirmwareUpgrade = false, firmwareConfigVersion = userConfig.getSemanticVersion(),
-}: { userConfig?: UserConfiguration; electron?: boolean; skipFirmwareUpgrade?: boolean; firmwareConfigVersion?: string } = {}) {
+    electron = true, skipFirmwareUpgrade = false, firmwareConfigVersion = userConfig.getSemanticVersion(), aiTags = [],
+}: {
+    userConfig?: UserConfiguration; electron?: boolean; skipFirmwareUpgrade?: boolean; firmwareConfigVersion?: string; aiTags?: string[];
+} = {}) {
     const store = createMockStore({ initialState: {
         app: { runningInElectron: electron },
         device: { skipFirmwareUpgrade, modules: { rightModuleInfo: { userConfigVersion: firmwareConfigVersion } } },
-        userConfiguration: { userConfiguration: userConfig },
+        userConfiguration: { userConfiguration: userConfig, aiTags },
     } });
     const authorize = mock.fn(() => of('approved'));
     const navigate = mock.fn();
