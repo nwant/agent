@@ -1,8 +1,8 @@
 # AI access preview
 
-This branch of Agent lets an AI coding assistant, such as Claude Code or Codex, read your UHK configuration and propose changes to keys, keymaps, macros, and settings. Nothing reaches the keyboard until you review the proposed changes in Agent and click **Save to keyboard**. The assistant talks to Agent through an MCP server (Model Context Protocol, the standard way AI assistants connect to tools) that runs inside Agent on your own computer.
+This branch of Agent lets an AI coding assistant, such as Claude Code or Codex, read your UHK configuration and propose changes to keys, keymaps, macros, and settings. Nothing reaches the keyboard until you review the proposed changes in Agent and click **Save to keyboard**, unless you [let the assistant save](#let-the-assistant-save). The assistant talks to Agent through an MCP server (Model Context Protocol, the standard way AI assistants connect to tools) that runs inside Agent on your own computer.
 
-This is a preview build from a fork, not an official Agent release. It has been tested end to end on a UHK 80 with firmware v18.0.3 on macOS. Other models, including the UHK 60 v2, should work because the feature uses the same Agent code for every model, but they have not been tested.
+This is a preview build from a fork, not an official Agent release. It has been tested end to end on a UHK 80 with firmware v18.0.3 on macOS, except for letting the assistant save, which is new. Other models, including the UHK 60 v2, should work because the feature uses the same Agent code for every model, but they have not been tested.
 
 ## What you need
 
@@ -46,15 +46,28 @@ The server listens only on this computer (127.0.0.1), on port 53417 unless you c
    - Manage macros with `create_macro`, `update_macro`, `rename_macro`, or `delete_macro`.
    - Change settings with `update_settings`. Settings changes also go through **Review changes** and **Save to keyboard**.
 3. In Agent, click **Review changes**. Changes the assistant made are tagged as AI changes, macro text is shown in full, and Agent flags risky ones: macros that run without a key press (such as `$onInit`), type into your computer, open a launcher or shell, or that Agent cannot check.
-4. Click **Save to keyboard**. Changes that run without a key press or open a launcher or shell need a second confirmation.
+4. Click **Save to keyboard**, or have the assistant save if you allow it. When you click, changes that run without a key press or open a launcher or shell need a second confirmation.
 5. Press the key. If a macro fails, the assistant can read the firmware's error and `setStatus` output with `get_macro_errors` and propose a fix.
 
 **Review changes** also has a **Discard all** control that reloads the configuration from the keyboard.
 
+## Let the assistant save
+
+By default, only your click on **Save to keyboard** saves. To skip that click, tick **Let AI clients save to the keyboard** in **Settings**, under **AI access**. The assistant can then save with `save_to_keyboard`.
+
+- **You do not see the changes first.** The assistant can save without asking you in Agent. A mistaken or manipulated assistant can put a bad key or macro on your keyboard. Your assistant may still ask before it uses the tool, depending on its own permission settings.
+- **A save includes everything unsaved,** your own changes too.
+- **Some changes still need your click:** macros that run without a key press, macros that such a macro calls (every macro change, if Agent cannot tell which it calls), launcher or shell shortcuts Agent recognizes, and changes that could lock you out of the keyboard. Agent refuses to let the assistant save while any of these is waiting. Use **Review changes** and **Save to keyboard**.
+- **Agent does not recognize every risk.** For example, the assistant can save a macro that types a harmful command when you press its key, or one that taps the Windows key alone.
+- Agent shows a notice after each save by the assistant.
+- To go back, open **Configuration** under **Device** and click **Restore** next to an earlier entry in **Configuration history**. An entry exists only for a configuration saved from Agent on this computer.
+
+Regenerating the token or turning AI access off turns this setting off.
+
 ## Privacy and the access token
 
 - Text macro contents are hidden from the assistant unless you tick **Let AI read text macro contents**. Leave it off if a text macro holds a password.
-- The token is stored in plain text in the assistant's configuration: `~/.claude.json` for Claude Code, `~/.codex/config.toml` for Codex. Anyone who can read those files can read your configuration and propose changes while Agent runs, though only you can save them to the keyboard.
+- The token is stored in plain text in the assistant's configuration: `~/.claude.json` for Claude Code, `~/.codex/config.toml` for Codex. Anyone who can read those files can read your configuration and propose changes while Agent runs. They can also save to the keyboard if you let AI clients save.
 - **Regenerate token** disconnects every connected assistant. Afterwards, copy the new command or entry and connect again.
 
 ## Differences from official Agent
@@ -65,7 +78,7 @@ This branch writes configuration format 15.0.0, which released firmware reads, s
 
 - Check `node --version` before building; `npm run build` fails on versions outside the range above.
 - `npm run electron` starts a desktop app and does not return. Run it in the background or a separate terminal.
-- Enabling AI access, reviewing, saving to the keyboard and pressing keys are for the person at the keyboard. Ask them to do these steps; do not try to click them yourself.
+- Enabling AI access, letting AI clients save, reviewing, clicking Save to keyboard and pressing keys are for the person at the keyboard. Ask them to do these steps; do not try to click them yourself. Use `save_to_keyboard` only if they turned it on and asked you to save.
 - After the person runs the connect command, the new MCP server's tools appear only in a new assistant session.
 
 ## Reporting problems
